@@ -26,11 +26,19 @@ extern "C" {
 #include "BKE_object.h"
 
 #include "BLI_math_matrix.h"
+#include "BLI_math_rotation.h"
 
 #include "DNA_layer_types.h"
 }
 
 namespace USD {
+
+static const float UNIT_M4[4][4] = {
+    {1, 0, 0, 0},
+    {0, 1, 0, 0},
+    {0, 0, 1, 0},
+    {0, 0, 0, 1},
+};
 
 USDTransformWriter::USDTransformWriter(const USDExporterContext &ctx) : USDAbstractWriter(ctx)
 {
@@ -38,16 +46,65 @@ USDTransformWriter::USDTransformWriter(const USDExporterContext &ctx) : USDAbstr
 
 void USDTransformWriter::do_write(HierarchyContext &context)
 {
-  float parent_relative_matrix[4][4];  // The object matrix relative to the parent.
-  mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, context.matrix_world);
+  pxr::UsdGeomXform xform;
 
-  // Write the transform relative to the parent.
-  pxr::UsdGeomXform xform = pxr::UsdGeomXform::Define(usd_export_context_.stage,
-                                                      usd_export_context_.usd_path);
-  if (!xformOp_) {
-    xformOp_ = xform.AddTransformOp();
+  if (usd_export_context_.export_params.export_as_overs) {
+    // Override existing prim on stage
+    xform = pxr::UsdGeomXform(
+        usd_export_context_.stage->OverridePrim(usd_export_context_.usd_path));
   }
-  xformOp_.Set(pxr::GfMatrix4d(parent_relative_matrix), get_export_time_code());
+  else {
+    // If prim exists, cast to UsdGeomXform (Solves merge transform and shape issue for animated
+    // exports)
+    pxr::UsdPrim existing_prim = usd_export_context_.stage->GetPrimAtPath(
+        usd_export_context_.usd_path);
+    if (existing_prim.IsValid()) {
+      xform = pxr::UsdGeomXform(existing_prim);
+    }
+    else {
+      xform = pxr::UsdGeomXform::Define(usd_export_context_.stage, usd_export_context_.usd_path);
+    }
+  }
+
+  if (usd_export_context_.export_params.export_transforms) {
+    float parent_relative_matrix[4][4];  // The object matrix relative to the parent.
+
+    // TODO(bjs): This is inefficient checking for every transform. should be moved elsewhere
+    if (context.export_parent == nullptr &&
+        usd_export_context_.export_params.convert_orientation) {
+      float matrix_world[4][4];
+      copy_m4_m4(matrix_world, context.matrix_world);
+      float mrot[3][3];
+      float mat[4][4];
+      mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
+                                USD_GLOBAL_UP_Z,
+                                usd_export_context_.export_params.forward_axis,
+                                usd_export_context_.export_params.up_axis,
+                                mrot);
+      transpose_m3(mrot);
+      copy_m4_m3(mat, mrot);
+      mul_m4_m4m4(matrix_world, mat, context.matrix_world);
+      mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, matrix_world);
+    }
+    else
+      mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, context.matrix_world);
+
+    // USD Xforms are by default set with an identity transform.
+    // This check ensures transforms of non-identity are authored
+    // preventing usd composition collisions up and down stream.
+    if (usd_export_context_.export_params.export_identity_transforms ||
+        !compare_m4m4(parent_relative_matrix, UNIT_M4, 0.000000001f)) {
+      if (!xformOp_) {
+        xformOp_ = xform.AddTransformOp();
+      }
+      xformOp_.Set(pxr::GfMatrix4d(parent_relative_matrix), get_export_time_code());
+    }
+  }
+
+  if (usd_export_context_.export_params.export_custom_properties && context.object) {
+    auto prim = xform.GetPrim();
+    write_id_properties(prim, context.object->id, get_export_time_code());
+  }
 }
 
 bool USDTransformWriter::check_is_animated(const HierarchyContext &context) const
@@ -58,6 +115,8 @@ bool USDTransformWriter::check_is_animated(const HierarchyContext &context) cons
      * depsgraph whether this object instance has a time source. */
     return true;
   }
+  // TODO: This fails for a specific set of drivers and rig setups...
+  // Setting 'context.animation_check_include_parent' to true fixed it...
   return BKE_object_moves_in_time(context.object, context.animation_check_include_parent);
 }
 

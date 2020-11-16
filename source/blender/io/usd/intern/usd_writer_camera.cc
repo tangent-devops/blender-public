@@ -30,6 +30,11 @@ extern "C" {
 #include "DNA_scene_types.h"
 }
 
+#include "MEM_guardedalloc.h"
+#include "RNA_access.h"
+#include "RNA_blender_cpp.h"
+#include "RNA_types.h"
+
 namespace USD {
 
 USDCameraWriter::USDCameraWriter(const USDExporterContext &ctx) : USDAbstractWriter(ctx)
@@ -71,8 +76,11 @@ static void camera_sensor_size_for_render(const Camera *camera,
 void USDCameraWriter::do_write(HierarchyContext &context)
 {
   pxr::UsdTimeCode timecode = get_export_time_code();
-  pxr::UsdGeomCamera usd_camera = pxr::UsdGeomCamera::Define(usd_export_context_.stage,
-                                                             usd_export_context_.usd_path);
+  pxr::UsdGeomCamera usd_camera = (usd_export_context_.export_params.export_as_overs) ?
+                                      pxr::UsdGeomCamera(usd_export_context_.stage->OverridePrim(
+                                          usd_export_context_.usd_path)) :
+                                      pxr::UsdGeomCamera::Define(usd_export_context_.stage,
+                                                                 usd_export_context_.usd_path);
 
   Camera *camera = static_cast<Camera *>(context.object->data);
   Scene *scene = DEG_get_evaluated_scene(usd_export_context_.depsgraph);
@@ -95,6 +103,24 @@ void USDCameraWriter::do_write(HierarchyContext &context)
   usd_camera.CreateVerticalApertureOffsetAttr().Set(aperture_y * camera->shifty * film_aspect,
                                                     timecode);
 
+  PointerRNA id_ptr;
+  RNA_id_pointer_create(&scene->id, &id_ptr);
+  BL::Scene test_scene(id_ptr);
+  BL::RenderSettings r = test_scene.render();
+
+  float shutter_length = r.motion_blur_shutter() / 2.0f;
+
+  double shutter_open = -shutter_length;
+  double shutter_close = shutter_length;
+
+  if (usd_export_context_.export_params.override_shutter) {
+    shutter_open = usd_export_context_.export_params.shutter_open;
+    shutter_close = usd_export_context_.export_params.shutter_close;
+  }
+
+  usd_camera.CreateShutterOpenAttr().Set(shutter_open);
+  usd_camera.CreateShutterCloseAttr().Set(shutter_close);
+
   usd_camera.CreateClippingRangeAttr().Set(
       pxr::VtValue(pxr::GfVec2f(camera->clip_start, camera->clip_end)), timecode);
 
@@ -105,6 +131,11 @@ void USDCameraWriter::do_write(HierarchyContext &context)
     float focus_distance = scene->unit.scale_length *
                            BKE_camera_object_dof_distance(context.object);
     usd_camera.CreateFocusDistanceAttr().Set(focus_distance, timecode);
+  }
+
+  if (usd_export_context_.export_params.export_custom_properties && camera) {
+    auto prim = usd_camera.GetPrim();
+    write_id_properties(prim, camera->id, timecode);
   }
 }
 

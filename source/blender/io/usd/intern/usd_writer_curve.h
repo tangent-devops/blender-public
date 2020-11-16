@@ -16,8 +16,8 @@
  * The Original Code is Copyright (C) 2019 Blender Foundation.
  * All rights reserved.
  */
-#ifndef __USD_WRITER_HAIR_H__
-#define __USD_WRITER_HAIR_H__
+#ifndef __USD_WRITER_CURVE_H__
+#define __USD_WRITER_CURVE_H__
 
 #include "usd_writer_abstract.h"
 
@@ -25,17 +25,17 @@
 
 namespace USD {
 
-/* Writer for writing hair particle data as USD curves. */
-class USDHairWriter : public USDAbstractWriter {
+/* Writer for writing Curve data as USD curves. */
+class USDCurveWriter : public USDAbstractWriter {
  public:
-  USDHairWriter(const USDExporterContext &ctx);
+  USDCurveWriter(const USDExporterContext &ctx);
 
  protected:
   virtual void do_write(HierarchyContext &context) override;
   virtual bool check_is_animated(const HierarchyContext &context) const override;
-  void assign_material(const HierarchyContext &context, pxr::UsdGeomBasisCurves usd_curve);
+  void assign_materials(const HierarchyContext &context, pxr::UsdGeomCurves usd_curve);
 };
 
 }  // namespace USD
 
-#endif /* __USD_WRITER_HAIR_H__ */
+#endif /* __USD_WRITER_CURVE_H__ */

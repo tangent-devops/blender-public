@@ -43,6 +43,7 @@ set(INC
   ../../windowmanager
   ../../../../intern/guardedalloc
   ../../../../intern/utfconv
+  ${CMAKE_BINARY_DIR}/source/blender/makesrna/intern
 )
 
 set(INC_SYS
@@ -57,10 +58,14 @@ set(SRC
   intern/usd_hierarchy_iterator.cc
   intern/usd_writer_abstract.cc
   intern/usd_writer_camera.cc
+  intern/usd_writer_curve.cc
   intern/usd_writer_hair.cc
   intern/usd_writer_light.cc
+  intern/usd_util.cc
+  intern/usd_writer_material.cc
   intern/usd_writer_mesh.cc
   intern/usd_writer_metaball.cc
+  intern/usd_writer_particle.cc
   intern/usd_writer_transform.cc
 
   usd.h
@@ -69,10 +74,14 @@ set(SRC
   intern/usd_hierarchy_iterator.h
   intern/usd_writer_abstract.h
   intern/usd_writer_camera.h
+  intern/usd_writer_curve.h
   intern/usd_writer_hair.h
   intern/usd_writer_light.h
+  intern/usd_util.h
+  intern/usd_writer_material.h
   intern/usd_writer_mesh.h
   intern/usd_writer_metaball.h
+  intern/usd_writer_particle.h
   intern/usd_writer_transform.h
 )
 

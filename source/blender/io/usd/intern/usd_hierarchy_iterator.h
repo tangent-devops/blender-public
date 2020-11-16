@@ -63,7 +63,8 @@ class USDHierarchyIterator : public AbstractHierarchyIterator {
   virtual void delete_object_writer(AbstractHierarchyWriter *writer) override;
 
  private:
-  USDExporterContext create_usd_export_context(const HierarchyContext *context);
+  USDExporterContext create_usd_export_context(const HierarchyContext *context,
+                                               bool mergeTransformAndShape = false);
 };
 
 }  // namespace USD

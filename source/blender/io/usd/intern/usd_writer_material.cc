@@ -1,0 +1,1245 @@
+/*
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ *
+ * The Original Code is Copyright (C) 2019 Blender Foundation.
+ * All rights reserved.
+ */
+#include "usd_writer_material.h"
+#include "usd_util.h"
+
+extern "C" {
+#include "BKE_animsys.h"
+#include "BKE_colorband.h"
+#include "BKE_colortools.h"
+#include "BKE_key.h"
+#include "BKE_node.h"
+
+#include "DNA_color_types.h"
+#include "DNA_light_types.h"
+#include "DNA_modifier_types.h"
+#include "DNA_node_types.h"
+
+#include "WM_api.h"
+#include "WM_types.h"
+
+#include "BKE_blender_version.h"
+#include "BKE_cachefile.h"
+#include "BKE_cdderivedmesh.h"
+#include "BKE_context.h"
+#include "BKE_curve.h"
+#include "BKE_global.h"
+#include "BKE_image.h"
+#include "BKE_layer.h"
+#include "BKE_main.h"
+#include "BKE_node.h"
+#include "BKE_scene.h"
+#include "BKE_world.h"
+
+#include "BLI_fileops.h"
+#include "BLI_linklist.h"
+#include "BLI_listbase.h"
+#include "BLI_math.h"
+#include "BLI_path_util.h"
+#include "BLI_string.h"
+#include "BLI_threads.h"
+#include "BLI_utildefines.h"
+}
+
+#include "MEM_guardedalloc.h"
+
+#include <algorithm>
+#include <cctype>
+#include <string>
+#include <utility>
+
+#include <pxr/base/tf/stringUtils.h>
+#include <pxr/pxr.h>
+#include <pxr/usd/usdGeom/mesh.h>
+#include <pxr/usd/usdGeom/scope.h>
+
+//#include <pxr/usdImaging/usdImaging/tokens.h> NOT INCLUDED IN BLENDER BUILD
+
+/* TfToken objects are not cheap to construct, so we do it once. */
+namespace usdtokens {
+// Materials
+static const pxr::TfToken diffuse_color("diffuseColor", pxr::TfToken::Immortal);
+static const pxr::TfToken metallic("metallic", pxr::TfToken::Immortal);
+static const pxr::TfToken preview_shader("previewShader", pxr::TfToken::Immortal);
+static const pxr::TfToken preview_surface("UsdPreviewSurface", pxr::TfToken::Immortal);
+static const pxr::TfToken uv_texture("UsdUVTexture", pxr::TfToken::Immortal);
+static const pxr::TfToken primvar_float2("UsdPrimvarReader_float2", pxr::TfToken::Immortal);
+static const pxr::TfToken roughness("roughness", pxr::TfToken::Immortal);
+static const pxr::TfToken specular("specular", pxr::TfToken::Immortal);
+static const pxr::TfToken opacity("opacity", pxr::TfToken::Immortal);
+static const pxr::TfToken surface("surface", pxr::TfToken::Immortal);
+static const pxr::TfToken perspective("perspective", pxr::TfToken::Immortal);
+static const pxr::TfToken orthographic("orthographic", pxr::TfToken::Immortal);
+static const pxr::TfToken rgb("rgb", pxr::TfToken::Immortal);
+static const pxr::TfToken r("r", pxr::TfToken::Immortal);
+static const pxr::TfToken g("g", pxr::TfToken::Immortal);
+static const pxr::TfToken b("b", pxr::TfToken::Immortal);
+static const pxr::TfToken st("st", pxr::TfToken::Immortal);
+static const pxr::TfToken result("result", pxr::TfToken::Immortal);
+static const pxr::TfToken varname("varname", pxr::TfToken::Immortal);
+static const pxr::TfToken normal("normal", pxr::TfToken::Immortal);
+static const pxr::TfToken ior("ior", pxr::TfToken::Immortal);
+static const pxr::TfToken file("file", pxr::TfToken::Immortal);
+static const pxr::TfToken preview("preview", pxr::TfToken::Immortal);
+}  // namespace usdtokens
+
+/* Cycles specific tokens (Blender Importer and HdCycles) */
+namespace cyclestokens {
+static const pxr::TfToken cycles("cycles", pxr::TfToken::Immortal);
+static const pxr::TfToken UVMap("UVMap", pxr::TfToken::Immortal);
+static const pxr::TfToken filename("filename", pxr::TfToken::Immortal);
+static const pxr::TfToken interpolation("interpolation", pxr::TfToken::Immortal);
+static const pxr::TfToken projection("projection", pxr::TfToken::Immortal);
+static const pxr::TfToken extension("extension", pxr::TfToken::Immortal);
+static const pxr::TfToken color_space("color_space", pxr::TfToken::Immortal);
+static const pxr::TfToken attribute("attribute", pxr::TfToken::Immortal);
+static const pxr::TfToken bsdf("bsdf", pxr::TfToken::Immortal);
+static const pxr::TfToken closure("closure", pxr::TfToken::Immortal);
+static const pxr::TfToken vector("vector", pxr::TfToken::Immortal);
+}  // namespace cyclestokens
+
+namespace USD {
+static const int HD_CYCLES_CURVE_EXPORT_RES = 256;
+
+static const std::map<int, std::string> node_glossy_item_conversion = {
+    {SHD_GLOSSY_SHARP, "Sharp"},
+    {SHD_GLOSSY_BECKMANN, "Beckmann"},
+    {SHD_GLOSSY_GGX, "GGX"},
+    {SHD_GLOSSY_ASHIKHMIN_SHIRLEY, "Ashikhmin-Shirley"},
+    {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
+};
+static const std::map<int, std::string> node_anisotropic_item_conversion = {
+    {SHD_GLOSSY_BECKMANN, "Beckmann"},
+    {SHD_GLOSSY_GGX, "GGX"},
+    {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
+    {SHD_GLOSSY_ASHIKHMIN_SHIRLEY, "Ashikhmin-Shirley"},
+};
+static const std::map<int, std::string> node_glass_item_conversion = {
+    {SHD_GLOSSY_SHARP, "Sharp"},
+    {SHD_GLOSSY_BECKMANN, "Beckmann"},
+    {SHD_GLOSSY_GGX, "GGX"},
+    {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
+};
+static const std::map<int, std::string> node_refraction_item_conversion = {
+    {SHD_GLOSSY_SHARP, "Sharp"},
+    {SHD_GLOSSY_BECKMANN, "Beckmann"},
+    {SHD_GLOSSY_GGX, "GGX"},
+};
+static const std::map<int, std::string> node_toon_item_conversion = {
+    {SHD_TOON_DIFFUSE, "Diffuse"},
+    {SHD_TOON_GLOSSY, "Glossy"},
+};
+static const std::map<int, std::string> node_hair_item_conversion = {
+    {SHD_HAIR_REFLECTION, "Reflection"},
+    {SHD_HAIR_TRANSMISSION, "Transmission"},
+};
+
+static const std::map<int, std::string> node_principled_distribution_item_conversion = {
+    {SHD_GLOSSY_GGX, "GGX"},
+    {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
+};
+static const std::map<int, std::string> node_subsurface_method_item_conversion = {
+    {SHD_SUBSURFACE_BURLEY, "burley"},
+    {SHD_SUBSURFACE_RANDOM_WALK, "random_walk"},
+};
+
+void to_lower(std::string &string)
+{
+  std::transform(string.begin(), string.end(), string.begin(), [](unsigned char c) {
+    return std::tolower(c);
+  });
+}
+
+void set_default(bNode *node,
+                 bNodeSocket *socketValue,
+                 bNodeSocket *socketName,
+                 pxr::UsdShadeShader usd_shader)
+{
+  std::string inputName = socketName->identifier;
+
+  switch (node->type) {
+    case SH_NODE_MATH: {
+      if (inputName == "Value_001")
+        inputName = "Value2";
+      else
+        inputName = "Value1";
+    } break;
+    case SH_NODE_VECTOR_MATH: {
+      if (inputName == "Vector_001")
+        inputName = "Vector2";
+      else if (inputName == "Vector_002")
+        inputName = "Vector3";
+      else
+        inputName = "Vector1";
+    } break;
+  }
+
+  to_lower(inputName);
+
+  pxr::TfToken sock_in = pxr::TfToken(pxr::TfMakeValidIdentifier(inputName));
+  switch (socketValue->type) {
+    case SOCK_FLOAT: {
+      bNodeSocketValueFloat *float_data = (bNodeSocketValueFloat *)socketValue->default_value;
+      usd_shader.CreateInput(sock_in, pxr::SdfValueTypeNames->Float)
+          .Set(pxr::VtValue(float_data->value));
+      break;
+    }
+    case SOCK_VECTOR: {
+      bNodeSocketValueVector *vector_data = (bNodeSocketValueVector *)socketValue->default_value;
+      usd_shader.CreateInput(sock_in, pxr::SdfValueTypeNames->Float3)
+          .Set(pxr::GfVec3f(vector_data->value[0], vector_data->value[1], vector_data->value[2]));
+      break;
+    }
+    case SOCK_RGBA: {
+      bNodeSocketValueRGBA *rgba_data = (bNodeSocketValueRGBA *)socketValue->default_value;
+      usd_shader.CreateInput(sock_in, pxr::SdfValueTypeNames->Float4)
+          .Set(pxr::GfVec4f(
+              rgba_data->value[0], rgba_data->value[1], rgba_data->value[2], rgba_data->value[2]));
+      break;
+    }
+    case SOCK_BOOLEAN: {
+      bNodeSocketValueBoolean *bool_data = (bNodeSocketValueBoolean *)socketValue->default_value;
+      usd_shader.CreateInput(sock_in, pxr::SdfValueTypeNames->Bool)
+          .Set(pxr::VtValue(bool_data->value));
+      break;
+    }
+    case SOCK_INT: {
+      bNodeSocketValueInt *int_data = (bNodeSocketValueInt *)socketValue->default_value;
+      usd_shader.CreateInput(sock_in, pxr::SdfValueTypeNames->Int)
+          .Set(pxr::VtValue(int_data->value));
+      break;
+    }
+    case SOCK_STRING: {
+      bNodeSocketValueString *string_data = (bNodeSocketValueString *)socketValue->default_value;
+      usd_shader.CreateInput(sock_in, pxr::SdfValueTypeNames->Token)
+          .Set(pxr::TfToken(pxr::TfMakeValidIdentifier(string_data->value)));
+      break;
+    }
+    default:
+      // Unsupported data type
+      break;
+  }
+}
+
+bNode *traverse_channel(bNodeSocket *input, short target_type = SH_NODE_TEX_IMAGE);
+
+bNode *traverse_channel(bNodeSocket *input, short target_type)
+{
+  bNodeSocket *tSock = input;
+  if (input->link) {
+    bNode *tNode = tSock->link->fromnode;
+
+    // if texture node
+    if (tNode->type == target_type) {
+      return tNode;
+    }
+
+    // for all inputs
+    for (bNodeSocket *nSock = (bNodeSocket *)tNode->inputs.first; nSock; nSock = nSock->next) {
+      tNode = traverse_channel(nSock);
+      if (tNode)
+        return tNode;
+    }
+
+    return NULL;
+  }
+  else {
+    return NULL;
+  }
+}
+
+/* Creates a USD Preview Surface node based on given cycles shading node */
+pxr::UsdShadeShader create_usd_preview_shader_node(USDExporterContext const &usd_export_context_,
+                                                   pxr::UsdShadeMaterial &material,
+                                                   char *name,
+                                                   int type,
+                                                   bNode *node)
+{
+  pxr::SdfPath shader_path = material.GetPath()
+                                 .AppendChild(usdtokens::preview)
+                                 .AppendChild(pxr::TfToken(pxr::TfMakeValidIdentifier(name)));
+  pxr::UsdShadeShader shader = (usd_export_context_.export_params.export_as_overs) ?
+                                   pxr::UsdShadeShader(
+                                       usd_export_context_.stage->OverridePrim(shader_path)) :
+                                   pxr::UsdShadeShader::Define(usd_export_context_.stage,
+                                                               shader_path);
+  switch (type) {
+    case SH_NODE_TEX_IMAGE: {
+      shader.CreateIdAttr(pxr::VtValue(usdtokens::uv_texture));
+      std::string imagePath = get_node_tex_image_filepath(node);
+      if (imagePath.size() > 0)
+        shader.CreateInput(usdtokens::file, pxr::SdfValueTypeNames->Asset)
+            .Set(pxr::SdfAssetPath(imagePath));
+      break;
+    }
+    case SH_NODE_TEX_COORD:
+    case SH_NODE_UVMAP: {
+      shader.CreateIdAttr(pxr::VtValue(usdtokens::primvar_float2));
+      break;
+    }
+    /*case SH_NODE_MAPPING: {
+      shader.CreateIdAttr(pxr::VtValue(usdtokens::primvar_float2));
+      break;
+    }*/
+    case SH_NODE_BSDF_DIFFUSE:
+    case SH_NODE_BSDF_PRINCIPLED: {
+      shader.CreateIdAttr(pxr::VtValue(usdtokens::preview_surface));
+      material.CreateSurfaceOutput().ConnectToSource(shader, usdtokens::surface);
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  return shader;
+}
+
+/* Creates a USDShadeShader based on given cycles shading node */
+pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
+                                              pxr::SdfPath &shaderPath,
+                                              bNode *node,
+                                              bool a_asOvers = false)
+{
+  pxr::SdfPath primpath = shaderPath.AppendChild(
+      pxr::TfToken(pxr::TfMakeValidIdentifier(node->name)));
+
+  // Early out if already created
+  if (a_stage->GetPrimAtPath(primpath).IsValid())
+    return pxr::UsdShadeShader::Get(a_stage, primpath);
+
+  pxr::UsdShadeShader shader = (a_asOvers) ? pxr::UsdShadeShader(a_stage->OverridePrim(primpath)) :
+                                             pxr::UsdShadeShader::Define(a_stage, primpath);
+
+  // Author Cycles Shader Node ID
+  // For now we convert spaces to _ and transform to lowercase.
+  // This isn't a 1:1 gaurantee it will be in the format for cycles standalone.
+  // e.g. Blender: ShaderNodeBsdfPrincipled. Cycles_principled_bsdf
+  // But works for now. We should also author idname to easier import directly
+  // to Blender.
+  bNodeType *ntype = node->typeinfo;
+  std::string usd_shade_type_name(ntype->ui_name);
+  to_lower(usd_shade_type_name);
+
+  // TODO Move this to a more generic conversion map?
+  if (usd_shade_type_name == "rgb")
+    usd_shade_type_name = "color";
+  if (node->type == SH_NODE_MIX_SHADER)
+    usd_shade_type_name = "mix_closure";
+  if (node->type == SH_NODE_ADD_SHADER)
+    usd_shade_type_name = "add_closure";
+  if (node->type == SH_NODE_OUTPUT_MATERIAL)
+    usd_shade_type_name = "output";
+  if (node->type == SH_NODE_OUTPUT_WORLD)
+    usd_shade_type_name = "output";
+  if (node->type == SH_NODE_OUTPUT_LIGHT)
+    usd_shade_type_name = "output";
+  if (node->type == SH_NODE_UVMAP)
+    usd_shade_type_name = "uvmap";
+  if (node->type == SH_NODE_VALTORGB)
+    usd_shade_type_name = "rgb_ramp";
+  if (node->type == SH_NODE_HUE_SAT)
+    usd_shade_type_name = "hsv";
+  if (node->type == SH_NODE_BRIGHTCONTRAST)
+    usd_shade_type_name = "brightness_contrast";
+  if (node->type == SH_NODE_BACKGROUND)
+    usd_shade_type_name = "background_shader";
+  if (node->type == SH_NODE_VOLUME_SCATTER)
+    usd_shade_type_name = "scatter_volume";
+  if (node->type == SH_NODE_VOLUME_ABSORPTION)
+    usd_shade_type_name = "absorption_volume";
+
+  shader.CreateIdAttr(
+      pxr::VtValue(pxr::TfToken("cycles_" + pxr::TfMakeValidIdentifier(usd_shade_type_name))));
+
+  // Store custom1-4
+
+  switch (node->type) {
+    case SH_NODE_TEX_WHITE_NOISE: {
+      shader.CreateInput(pxr::TfToken("Dimensions"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_MATH: {
+      shader.CreateInput(pxr::TfToken("Type"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_VECTOR_MATH: {
+      shader.CreateInput(pxr::TfToken("Type"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_MAPPING: {
+      shader.CreateInput(pxr::TfToken("Type"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_MIX_RGB: {
+      shader.CreateInput(pxr::TfToken("Type"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+      shader.CreateInput(pxr::TfToken("Use_Clamp"), pxr::SdfValueTypeNames->Bool)
+          .Set(node->custom1 & SHD_MIXRGB_CLAMP);
+    } break;
+    case SH_NODE_VECTOR_DISPLACEMENT: {
+      shader.CreateInput(pxr::TfToken("Space"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_SUBSURFACE_SCATTERING: {
+      shader.CreateInput(pxr::TfToken("Falloff"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_CLAMP: {
+      shader.CreateInput(pxr::TfToken("Type"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_WIREFRAME: {
+      shader.CreateInput(pxr::TfToken("Use_Pixel_Size"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_BSDF_GLOSSY: {
+      // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
+      // instead
+      shader.CreateInput(pxr::TfToken("Distribution"), pxr::SdfValueTypeNames->String)
+          .Set(node_glossy_item_conversion.at((int)node->custom1));
+    } break;
+    case SH_NODE_BSDF_REFRACTION: {
+      // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
+      // instead
+      shader.CreateInput(pxr::TfToken("Distribution"), pxr::SdfValueTypeNames->String)
+          .Set(node_refraction_item_conversion.at((int)node->custom1));
+    } break;
+    case SH_NODE_DISPLACEMENT: {
+      // NOTE cycles and blender enum seem different SHD_SPACE_OBJECT !~= NODE_NORMAL_MAP_OBJECT
+      shader.CreateInput(pxr::TfToken("Space"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_BSDF_HAIR_PRINCIPLED: {
+      // Cycles Standalone uses a different enum for parametrization, we encode strings instead
+      shader.CreateInput(pxr::TfToken("Parametrization"), pxr::SdfValueTypeNames->String)
+          .Set(node_hair_item_conversion.at((int)node->custom1));
+    } break;
+    case SH_NODE_MAP_RANGE: {
+      shader.CreateInput(pxr::TfToken("Use_Clamp"), pxr::SdfValueTypeNames->Bool)
+          .Set((bool)node->custom1 == true);
+      shader.CreateInput(pxr::TfToken("Type"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom2);
+    } break;
+    case SH_NODE_BEVEL: {
+      shader.CreateInput(pxr::TfToken("Samples"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+    } break;
+    case SH_NODE_AMBIENT_OCCLUSION: {
+      shader.CreateInput(pxr::TfToken("Samples"), pxr::SdfValueTypeNames->Int)
+          .Set((int)node->custom1);
+      // TODO: Format?
+      shader.CreateInput(pxr::TfToken("Inside"), pxr::SdfValueTypeNames->Bool)
+          .Set((bool)node->custom2);
+      shader.CreateInput(pxr::TfToken("Only_Local"), pxr::SdfValueTypeNames->Bool)
+          .Set((bool)node->custom3);
+    } break;
+    case SH_NODE_BSDF_ANISOTROPIC: {
+      // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
+      // instead
+      shader.CreateInput(pxr::TfToken("Distribution"), pxr::SdfValueTypeNames->String)
+          .Set(node_anisotropic_item_conversion.at((int)node->custom1));
+    } break;
+    case SH_NODE_BSDF_GLASS: {
+      // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
+      // instead
+      shader.CreateInput(pxr::TfToken("Distribution"), pxr::SdfValueTypeNames->String)
+          .Set(node_glass_item_conversion.at((int)node->custom1));
+    } break;
+    case SH_NODE_BUMP: {
+      shader.CreateInput(pxr::TfToken("Invert"), pxr::SdfValueTypeNames->Bool)
+          .Set((bool)node->custom1);
+    } break;
+    case SH_NODE_BSDF_PRINCIPLED: {
+      // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
+      // instead
+
+      int distribution = ((node->custom1) & 6);
+
+      shader.CreateInput(pxr::TfToken("Distribution"), pxr::SdfValueTypeNames->String)
+          .Set(node_principled_distribution_item_conversion.at(distribution));
+      shader.CreateInput(pxr::TfToken("Subsurface_Method"), pxr::SdfValueTypeNames->String)
+          .Set(node_subsurface_method_item_conversion.at((int)node->custom2));
+
+      // Removed in 2.82+?
+      bool sss_diffuse_blend_get = (((node->custom1) & 8) != 0);
+      shader.CreateInput(pxr::TfToken("Blend_SSS_Diffuse"), pxr::SdfValueTypeNames->Bool)
+          .Set(sss_diffuse_blend_get);
+    } break;
+  }
+
+  // Convert all internal storage
+  switch (node->type) {
+
+      // -- Texture Node Storage
+
+    case SH_NODE_TEX_SKY: {
+      NodeTexSky *sky_storage = (NodeTexSky *)node->storage;
+      if (!sky_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("sky_model"), pxr::SdfValueTypeNames->Int)
+          .Set(sky_storage->sky_model);
+      shader.CreateInput(pxr::TfToken("sun_direction"), pxr::SdfValueTypeNames->Vector3f)
+          .Set(pxr::GfVec3f(sky_storage->sun_direction[0],
+                            sky_storage->sun_direction[1],
+                            sky_storage->sun_direction[2]));
+      shader.CreateInput(pxr::TfToken("turbidity"), pxr::SdfValueTypeNames->Float)
+          .Set(sky_storage->turbidity);
+      shader.CreateInput(pxr::TfToken("ground_albedo"), pxr::SdfValueTypeNames->Float)
+          .Set(sky_storage->ground_albedo);
+    } break;
+
+    case SH_NODE_TEX_IMAGE: {
+      NodeTexImage *tex_original = (NodeTexImage *)node->storage;
+      if (!tex_original)
+        break;
+      std::string imagePath = get_node_tex_image_filepath(node);
+      if (imagePath.size() > 0)
+        shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
+            .Set(pxr::SdfAssetPath(imagePath));
+
+      shader.CreateInput(cyclestokens::interpolation, pxr::SdfValueTypeNames->Int)
+          .Set(tex_original->interpolation);
+      shader.CreateInput(cyclestokens::projection, pxr::SdfValueTypeNames->Int)
+          .Set(tex_original->projection);
+      shader.CreateInput(cyclestokens::extension, pxr::SdfValueTypeNames->Int)
+          .Set(tex_original->extension);
+      shader.CreateInput(cyclestokens::color_space, pxr::SdfValueTypeNames->Int)
+          .Set(tex_original->color_space);
+
+      break;
+    }
+
+    case SH_NODE_TEX_CHECKER: {
+      // NodeTexChecker *storage = (NodeTexChecker *)node->storage;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+    } break;
+
+    case SH_NODE_TEX_BRICK: {
+      NodeTexBrick *brick_storage = (NodeTexBrick *)node->storage;
+      if (!brick_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("offset_freq"), pxr::SdfValueTypeNames->Int)
+          .Set(brick_storage->offset_freq);
+      shader.CreateInput(pxr::TfToken("squash_freq"), pxr::SdfValueTypeNames->Int)
+          .Set(brick_storage->squash_freq);
+      shader.CreateInput(pxr::TfToken("offset"), pxr::SdfValueTypeNames->Float)
+          .Set(brick_storage->offset);
+      shader.CreateInput(pxr::TfToken("squash"), pxr::SdfValueTypeNames->Float)
+          .Set(brick_storage->squash);
+    } break;
+
+    case SH_NODE_TEX_ENVIRONMENT: {
+      NodeTexEnvironment *env_storage = (NodeTexEnvironment *)node->storage;
+      if (!env_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      std::string imagePath = get_node_tex_image_filepath(node);
+      if (imagePath.size() > 0)
+        shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
+            .Set(pxr::SdfAssetPath(imagePath));
+      shader.CreateInput(pxr::TfToken("projection"), pxr::SdfValueTypeNames->Int)
+          .Set(env_storage->projection);
+      shader.CreateInput(pxr::TfToken("interpolation"), pxr::SdfValueTypeNames->Int)
+          .Set(env_storage->interpolation);
+    } break;
+
+    case SH_NODE_TEX_GRADIENT: {
+      NodeTexGradient *grad_storage = (NodeTexGradient *)node->storage;
+      if (!grad_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("gradient_type"), pxr::SdfValueTypeNames->Int)
+          .Set(grad_storage->gradient_type);
+    } break;
+
+    case SH_NODE_TEX_NOISE: {
+      NodeTexNoise *noise_storage = (NodeTexNoise *)node->storage;
+      if (!noise_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("dimensions"), pxr::SdfValueTypeNames->Int)
+          .Set(noise_storage->dimensions);
+    } break;
+
+    case SH_NODE_TEX_VORONOI: {
+      NodeTexVoronoi *voronoi_storage = (NodeTexVoronoi *)node->storage;
+      if (!voronoi_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("dimensions"), pxr::SdfValueTypeNames->Int)
+          .Set(voronoi_storage->dimensions);
+      shader.CreateInput(pxr::TfToken("feature"), pxr::SdfValueTypeNames->Int)
+          .Set(voronoi_storage->feature);
+      shader.CreateInput(pxr::TfToken("distance"), pxr::SdfValueTypeNames->Int)
+          .Set(voronoi_storage->distance);
+    } break;
+
+    case SH_NODE_TEX_MUSGRAVE: {
+      NodeTexMusgrave *musgrave_storage = (NodeTexMusgrave *)node->storage;
+      if (!musgrave_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("musgrave_type"), pxr::SdfValueTypeNames->Int)
+          .Set(musgrave_storage->musgrave_type);
+      shader.CreateInput(pxr::TfToken("dimensions"), pxr::SdfValueTypeNames->Int)
+          .Set(musgrave_storage->dimensions);
+    } break;
+
+    case SH_NODE_TEX_WAVE: {
+      NodeTexWave *wave_storage = (NodeTexWave *)node->storage;
+      if (!wave_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("wave_type"), pxr::SdfValueTypeNames->Int)
+          .Set(wave_storage->wave_type);
+      shader.CreateInput(pxr::TfToken("wave_profile"), pxr::SdfValueTypeNames->Int)
+          .Set(wave_storage->wave_profile);
+    } break;
+
+    case SH_NODE_TEX_MAGIC: {
+      NodeTexMagic *magic_storage = (NodeTexMagic *)node->storage;
+      if (!magic_storage)
+        break;
+      // TexMapping tex_mapping;
+      // ColorMapping color_mapping;
+      shader.CreateInput(pxr::TfToken("depth"), pxr::SdfValueTypeNames->Int)
+          .Set(magic_storage->depth);
+    } break;
+
+      // ==== Ramp
+
+    case SH_NODE_VALTORGB: {
+      ColorBand *coba = (ColorBand *)node->storage;
+      if (!coba)
+        break;
+
+      pxr::VtVec3fArray array;
+      pxr::VtFloatArray alpha_array;
+
+      int size = HD_CYCLES_CURVE_EXPORT_RES;
+      for (int i = 0; i < size; i++) {
+
+        const float in = (float)i / size;
+        float out[4] = {0, 0, 0, 0};
+
+        BKE_colorband_evaluate(coba, in, out);
+        array.push_back(pxr::GfVec3f(out[0], out[1], out[2]));
+        alpha_array.push_back(out[3]);
+      }
+
+      shader.CreateInput(pxr::TfToken("Interpolate"), pxr::SdfValueTypeNames->Bool)
+          .Set(coba->ipotype != COLBAND_INTERP_LINEAR);
+
+      shader.CreateInput(pxr::TfToken("Ramp"), pxr::SdfValueTypeNames->Float3Array).Set(array);
+      shader.CreateInput(pxr::TfToken("Ramp_Alpha"), pxr::SdfValueTypeNames->FloatArray)
+          .Set(alpha_array);
+    } break;
+
+      // ==== Curves
+
+    case SH_NODE_CURVE_VEC: {
+      CurveMapping *vec_curve_storage = (CurveMapping *)node->storage;
+      if (!vec_curve_storage)
+        break;
+
+      pxr::VtVec3fArray array;
+
+      BKE_curvemapping_initialize(vec_curve_storage);
+
+      int size = HD_CYCLES_CURVE_EXPORT_RES;
+      for (int i = 0; i < size; i++) {
+
+        float out[3] = {0, 0, 0};
+
+        const float iter[3] = {(float)i / size, (float)i / size, (float)i / size};
+
+        BKE_curvemapping_evaluate3F(vec_curve_storage, out, iter);
+        array.push_back(pxr::GfVec3f(out[0], out[1], out[2]));
+      }
+
+      // @TODO(bjs): Implement properly
+      shader.CreateInput(pxr::TfToken("Min_X"), pxr::SdfValueTypeNames->Float).Set(0.0f);
+      shader.CreateInput(pxr::TfToken("Max_X"), pxr::SdfValueTypeNames->Float).Set(1.0f);
+
+      shader.CreateInput(pxr::TfToken("Curves"), pxr::SdfValueTypeNames->Float3Array).Set(array);
+
+    } break;
+
+    case SH_NODE_CURVE_RGB: {
+      CurveMapping *col_curve_storage = (CurveMapping *)node->storage;
+      if (!col_curve_storage)
+        break;
+
+      pxr::VtVec3fArray array;
+
+      BKE_curvemapping_initialize(col_curve_storage);
+
+      int size = HD_CYCLES_CURVE_EXPORT_RES;
+      for (int i = 0; i < size; i++) {
+
+        float out[3] = {0, 0, 0};
+
+        const float iter[3] = {(float)i / size, (float)i / size, (float)i / size};
+
+        BKE_curvemapping_evaluate3F(col_curve_storage, out, iter);
+        array.push_back(pxr::GfVec3f(out[0], out[1], out[2]));
+      }
+
+      // @TODO(bjs): Implement properly
+      shader.CreateInput(pxr::TfToken("Min_X"), pxr::SdfValueTypeNames->Float).Set(0.0f);
+      shader.CreateInput(pxr::TfToken("Max_X"), pxr::SdfValueTypeNames->Float).Set(1.0f);
+
+      shader.CreateInput(pxr::TfToken("Curves"), pxr::SdfValueTypeNames->Float3Array).Set(array);
+    } break;
+
+    // ==== Misc
+    case SH_NODE_VALUE: {
+      if (!node->outputs.first)
+        break;
+      bNodeSocket *val_sock = (bNodeSocket *)node->outputs.first;
+      if (val_sock) {
+        bNodeSocketValueFloat *float_data = (bNodeSocketValueFloat *)val_sock->default_value;
+        shader.CreateInput(pxr::TfToken("value"), pxr::SdfValueTypeNames->Float)
+            .Set(float_data->value);
+      }
+    } break;
+
+    case SH_NODE_RGB: {
+      if (!node->outputs.first)
+        break;
+      bNodeSocket *val_sock = (bNodeSocket *)node->outputs.first;
+      if (val_sock) {
+        bNodeSocketValueRGBA *col_data = (bNodeSocketValueRGBA *)val_sock->default_value;
+        shader.CreateInput(pxr::TfToken("value"), pxr::SdfValueTypeNames->Color3f)
+            .Set(pxr::GfVec3f(col_data->value[0], col_data->value[1], col_data->value[2]));
+      }
+    } break;
+
+    case SH_NODE_UVMAP: {
+      NodeShaderUVMap *uv_storage = (NodeShaderUVMap *)node->storage;
+      if (!uv_storage)
+        break;
+      shader.CreateInput(cyclestokens::attribute, pxr::SdfValueTypeNames->String)
+          .Set(pxr::TfMakeValidIdentifier(uv_storage->uv_map));
+      break;
+    }
+
+    case SH_NODE_HUE_SAT: {
+      NodeHueSat *hue_sat_node_str = (NodeHueSat *)node->storage;
+      if (!hue_sat_node_str)
+        break;
+      shader.CreateInput(pxr::TfToken("hue"), pxr::SdfValueTypeNames->Float)
+          .Set(hue_sat_node_str->hue);
+      shader.CreateInput(pxr::TfToken("sat"), pxr::SdfValueTypeNames->Float)
+          .Set(hue_sat_node_str->sat);
+      shader.CreateInput(pxr::TfToken("val"), pxr::SdfValueTypeNames->Float)
+          .Set(hue_sat_node_str->val);
+    } break;
+
+    case SH_NODE_TANGENT: {
+      NodeShaderTangent *tangent_node_str = (NodeShaderTangent *)node->storage;
+      if (!tangent_node_str)
+        break;
+      shader.CreateInput(pxr::TfToken("direction_type"), pxr::SdfValueTypeNames->Int)
+          .Set(tangent_node_str->direction_type);
+      shader.CreateInput(pxr::TfToken("axis"), pxr::SdfValueTypeNames->Int)
+          .Set(tangent_node_str->axis);
+      shader.CreateInput(pxr::TfToken("Attribute"), pxr::SdfValueTypeNames->String)
+          .Set(tangent_node_str->uv_map);
+    } break;
+
+    case SH_NODE_NORMAL_MAP: {
+      NodeShaderNormalMap *normal_node_str = (NodeShaderNormalMap *)node->storage;
+      if (!normal_node_str)
+        break;
+      shader.CreateInput(pxr::TfToken("Space"), pxr::SdfValueTypeNames->Int)
+          .Set(normal_node_str->space);
+      shader.CreateInput(pxr::TfToken("Attribute"), pxr::SdfValueTypeNames->String)
+          .Set(pxr::TfMakeValidIdentifier(normal_node_str->uv_map));
+    } break;
+
+    case SH_NODE_VERTEX_COLOR: {
+      NodeShaderVertexColor *vert_col_node_str = (NodeShaderVertexColor *)node->storage;
+      if (!vert_col_node_str)
+        break;
+      shader.CreateInput(pxr::TfToken("layer_name"), pxr::SdfValueTypeNames->String)
+          .Set(vert_col_node_str->layer_name);
+    } break;
+
+    case SH_NODE_TEX_IES: {
+      NodeShaderTexIES *ies_node_str = (NodeShaderTexIES *)node->storage;
+      if (!ies_node_str)
+        break;
+      shader.CreateInput(pxr::TfToken("mode"), pxr::SdfValueTypeNames->Int)
+          .Set(ies_node_str->mode);
+
+      // TODO Cycles standalone expects this as "File Name" ustring...
+      shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
+          .Set(pxr::SdfAssetPath(ies_node_str->filepath));
+    } break;
+
+    case SH_NODE_ATTRIBUTE: {
+      NodeShaderAttribute *attr_node_str = (NodeShaderAttribute *)node->storage;
+      if (!attr_node_str)
+        break;
+      shader.CreateInput(pxr::TfToken("Attribute"), pxr::SdfValueTypeNames->String)
+          .Set(attr_node_str->name);
+    } break;
+  }
+
+  // Assign default input inputs
+  for (bNodeSocket *nSock = (bNodeSocket *)node->inputs.first; nSock; nSock = nSock->next) {
+    set_default(node, nSock, nSock, shader);
+  }
+
+  return shader;
+}
+
+/* Entry point to create approximate USD Preview Surface network from Cycles node graph.
+ * Due to the limited nodes in the USD Preview Surface Spec, only the following nodes
+ * are supported:
+ *  - UVMap
+ *  - Texture Coordinate
+ *  - Image Texture
+ *  - Principled BSDF
+ * More may be added in the future. */
+void create_usd_preview_surface_material(USDExporterContext const &usd_export_context_,
+                                         Material *material,
+                                         pxr::UsdShadeMaterial &usd_material)
+{
+
+  usd_define_or_over<pxr::UsdGeomScope>(usd_export_context_.stage,
+                                        usd_material.GetPath().AppendChild(usdtokens::preview),
+                                        usd_export_context_.export_params.export_as_overs);
+
+  pxr::TfToken defaultUVSampler = (usd_export_context_.export_params.convert_uv_to_st) ?
+                                      usdtokens::st :
+                                      cyclestokens::UVMap;
+
+  for (bNode *node = (bNode *)material->nodetree->nodes.first; node; node = node->next) {
+    if (node->type == SH_NODE_BSDF_PRINCIPLED || node->type == SH_NODE_BSDF_DIFFUSE) {
+      // We only handle the first instance of matching BSDF
+      // USD Preview surface has no concept of layering materials
+
+      pxr::UsdShadeShader previewSurface = create_usd_preview_shader_node(
+          usd_export_context_, usd_material, node->name, node->type, node);
+
+      // @TODO: Maybe use this call: bNodeSocket *in_sock = nodeFindSocket(node, SOCK_IN, "Base
+      // Color");
+      for (bNodeSocket *sock = (bNodeSocket *)node->inputs.first; sock; sock = sock->next) {
+        bNode *found_node = NULL;
+        pxr::UsdShadeShader created_shader;
+
+        if (strncmp(sock->name, "Base Color", 64) == 0 || strncmp(sock->name, "Color", 64) == 0) {
+          // -- Base Color
+
+          found_node = traverse_channel(sock);
+          if (found_node) {  // Create connection
+            created_shader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, found_node->name, found_node->type, found_node);
+            previewSurface.CreateInput(usdtokens::diffuse_color, pxr::SdfValueTypeNames->Float3)
+                .ConnectToSource(created_shader, usdtokens::rgb);
+          }
+          else {  // Set hardcoded value
+            bNodeSocketValueRGBA *socket_data = (bNodeSocketValueRGBA *)sock->default_value;
+            previewSurface.CreateInput(usdtokens::diffuse_color, pxr::SdfValueTypeNames->Float3)
+                .Set(pxr::VtValue(pxr::GfVec3f(
+                    socket_data->value[0], socket_data->value[1], socket_data->value[2])));
+          }
+        }
+        else if (strncmp(sock->name, "Roughness", 64) == 0) {
+          // -- Roughness
+
+          found_node = traverse_channel(sock);
+          if (found_node) {  // Create connection
+            created_shader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, found_node->name, found_node->type, found_node);
+            previewSurface.CreateInput(usdtokens::roughness, pxr::SdfValueTypeNames->Float)
+                .ConnectToSource(created_shader, usdtokens::r);
+          }
+          else {  // Set hardcoded value
+            bNodeSocketValueFloat *socket_data = (bNodeSocketValueFloat *)sock->default_value;
+            previewSurface.CreateInput(usdtokens::roughness, pxr::SdfValueTypeNames->Float)
+                .Set(pxr::VtValue(socket_data->value));
+          }
+        }
+        else if (strncmp(sock->name, "Metallic", 64) == 0) {
+          // -- Metallic
+
+          found_node = traverse_channel(sock);
+          if (found_node) {  // Set hardcoded value
+            created_shader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, found_node->name, found_node->type, found_node);
+            previewSurface.CreateInput(usdtokens::metallic, pxr::SdfValueTypeNames->Float)
+                .ConnectToSource(created_shader, usdtokens::r);
+          }
+          else {  // Set hardcoded value
+            bNodeSocketValueFloat *socket_data = (bNodeSocketValueFloat *)sock->default_value;
+            previewSurface.CreateInput(usdtokens::metallic, pxr::SdfValueTypeNames->Float)
+                .Set(pxr::VtValue(socket_data->value));
+          }
+        }
+        else if (strncmp(sock->name, "Specular", 64) == 0) {
+          // -- Specular
+
+          found_node = traverse_channel(sock);
+          if (found_node) {  // Set hardcoded value
+            created_shader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, found_node->name, found_node->type, found_node);
+            previewSurface.CreateInput(usdtokens::specular, pxr::SdfValueTypeNames->Float)
+                .ConnectToSource(created_shader, usdtokens::r);
+          }
+          else {  // Set hardcoded value
+            bNodeSocketValueFloat *socket_data = (bNodeSocketValueFloat *)sock->default_value;
+            previewSurface.CreateInput(usdtokens::specular, pxr::SdfValueTypeNames->Float)
+                .Set(pxr::VtValue(socket_data->value));
+          }
+        }
+        else if (strncmp(sock->name, "Transmission", 64) == 0) {
+          // -- Transmission
+          // @TODO: We might need to check this, could need one minus
+
+          found_node = traverse_channel(sock);
+          if (found_node) {  // Set hardcoded value
+            created_shader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, found_node->name, found_node->type, found_node);
+            previewSurface.CreateInput(usdtokens::opacity, pxr::SdfValueTypeNames->Float)
+                .ConnectToSource(created_shader, usdtokens::r);
+          }
+          else {  // Set hardcoded value
+            bNodeSocketValueFloat *socket_data = (bNodeSocketValueFloat *)sock->default_value;
+            previewSurface.CreateInput(usdtokens::opacity, pxr::SdfValueTypeNames->Float)
+                .Set(pxr::VtValue(1.0f - socket_data->value));
+          }
+        }
+        else if (strncmp(sock->name, "IOR", 64) == 0) {
+          // -- Specular
+          // @TODO: We assume no input connection
+
+          // Set hardcoded value
+          bNodeSocketValueFloat *socket_data = (bNodeSocketValueFloat *)sock->default_value;
+          previewSurface.CreateInput(usdtokens::ior, pxr::SdfValueTypeNames->Float)
+              .Set(pxr::VtValue(socket_data->value));
+        }
+        else if (strncmp(sock->name, "Normal", 64) == 0) {
+          // -- Normal
+          // @TODO: We assume no default value
+
+          found_node = traverse_channel(sock);
+          if (found_node) {
+            created_shader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, found_node->name, found_node->type, found_node);
+            previewSurface.CreateInput(usdtokens::normal, pxr::SdfValueTypeNames->Float)
+                .ConnectToSource(created_shader, usdtokens::rgb);
+          }
+        }
+
+        // If any input node has been found, look for uv node
+        if (found_node) {
+
+          bool found_uv_node = false;
+
+          // Find UV Input
+          for (bNodeSocket *sock = (bNodeSocket *)found_node->inputs.first; sock;
+               sock = sock->next) {
+            if (sock == nullptr)
+              continue;
+            if (sock->link == nullptr)
+              continue;
+
+            if (strncmp(sock->name, "Vector", 64) != 0)
+              continue;
+            // bNode *uvNode = sock->link->fromnode;
+            bNode *uvNode = traverse_channel(sock, SH_NODE_TEX_COORD);
+            if (uvNode == nullptr)
+              uvNode = traverse_channel(sock, SH_NODE_UVMAP);
+
+            if (uvNode == NULL)
+              continue;
+
+            pxr::UsdShadeShader uvShader = create_usd_preview_shader_node(
+                usd_export_context_, usd_material, uvNode->name, uvNode->type, uvNode);
+            if (!uvShader.GetPrim().IsValid())
+              continue;
+
+            found_uv_node = true;
+
+            if (uvNode->storage != NULL) {
+              NodeShaderUVMap *uvmap = (NodeShaderUVMap *)uvNode->storage;
+              if (uvmap) {
+
+                std::string uv_set = pxr::TfMakeValidIdentifier(uvmap->uv_map);
+                if (usd_export_context_.export_params.convert_uv_to_st)
+                  uv_set = "st";
+
+                uvShader.CreateInput(usdtokens::varname, pxr::SdfValueTypeNames->Token)
+                    .Set(pxr::TfToken(uv_set));
+                created_shader.CreateInput(usdtokens::st, pxr::SdfValueTypeNames->Float2)
+                    .ConnectToSource(uvShader, usdtokens::result);
+              }
+              else {
+                uvShader.CreateInput(usdtokens::varname, pxr::SdfValueTypeNames->Token)
+                    .Set(defaultUVSampler);
+                created_shader.CreateInput(usdtokens::st, pxr::SdfValueTypeNames->Float2)
+                    .ConnectToSource(uvShader, usdtokens::result);
+              }
+            }
+            else {
+              uvShader.CreateInput(usdtokens::varname, pxr::SdfValueTypeNames->Token)
+                  .Set(defaultUVSampler);
+              created_shader.CreateInput(usdtokens::st, pxr::SdfValueTypeNames->Float2)
+                  .ConnectToSource(uvShader, usdtokens::result);
+            }
+          }
+
+          if (!found_uv_node) {
+            pxr::UsdShadeShader uvShader = create_usd_preview_shader_node(
+                usd_export_context_,
+                usd_material,
+                const_cast<char *>("uvmap"),
+                SH_NODE_TEX_COORD,
+                NULL);
+            if (!uvShader.GetPrim().IsValid())
+              continue;
+            uvShader.CreateInput(usdtokens::varname, pxr::SdfValueTypeNames->Token)
+                .Set(defaultUVSampler);
+            created_shader.CreateInput(usdtokens::st, pxr::SdfValueTypeNames->Float2)
+                .ConnectToSource(uvShader, usdtokens::result);
+          }
+        }
+      }
+      return;
+    }
+  }
+  return;
+}
+
+void store_cycles_nodes(pxr::UsdStageRefPtr a_stage,
+                        bNodeTree *ntree,
+                        pxr::SdfPath shader_path,
+                        bNode **material_out,
+                        bool a_asOvers)
+{
+  for (bNode *node = (bNode *)ntree->nodes.first; node; node = node->next) {
+
+    // Blacklist certain nodes
+    if (node->flag & NODE_MUTED)
+      continue;
+
+    if (node->type == SH_NODE_OUTPUT_MATERIAL) {
+      *material_out = node;
+      continue;
+    }
+
+    pxr::UsdShadeShader node_shader = create_cycles_shader_node(
+        a_stage, shader_path, node, a_asOvers);
+  }
+}
+
+void link_cycles_nodes(pxr::UsdStageRefPtr a_stage,
+                       pxr::UsdShadeMaterial &usd_material,
+                       bNodeTree *ntree,
+                       pxr::SdfPath shader_path,
+                       bool a_asOvers)
+{
+  // for all links
+  for (bNodeLink *link = (bNodeLink *)ntree->links.first; link; link = link->next) {
+    bNode *from_node = link->fromnode, *to_node = link->tonode;
+    bNodeSocket *from_sock = link->fromsock, *to_sock = link->tosock;
+
+    // We should not encounter any groups, the node tree is pre-flattened.
+    if (to_node->type == NODE_GROUP_OUTPUT)
+      continue;
+
+    if (from_node->type == NODE_GROUP_OUTPUT)
+      continue;
+
+    if (from_node == nullptr)
+      continue;
+    if (to_node == nullptr)
+      continue;
+    if (from_sock == nullptr)
+      continue;
+    if (to_sock == nullptr)
+      continue;
+
+    pxr::UsdShadeShader from_shader = pxr::UsdShadeShader::Define(
+        a_stage,
+        shader_path.AppendChild(pxr::TfToken(pxr::TfMakeValidIdentifier(from_node->name))));
+
+    if (to_node->type == SH_NODE_OUTPUT_MATERIAL) {
+      if (strncmp(to_sock->name, "Surface", 64) == 0) {
+        if (strncmp(from_sock->name, "BSDF", 64) == 0)
+          usd_material.CreateSurfaceOutput(cyclestokens::cycles)
+              .ConnectToSource(from_shader, cyclestokens::bsdf);
+        else
+          usd_material.CreateSurfaceOutput(cyclestokens::cycles)
+              .ConnectToSource(from_shader, cyclestokens::closure);
+      }
+      else if (strncmp(to_sock->name, "Volume", 64) == 0)
+        usd_material.CreateVolumeOutput(cyclestokens::cycles)
+            .ConnectToSource(from_shader, cyclestokens::bsdf);
+      else if (strncmp(to_sock->name, "Displacement", 64) == 0)
+        usd_material.CreateDisplacementOutput(cyclestokens::cycles)
+            .ConnectToSource(from_shader, cyclestokens::vector);
+      continue;
+    }
+
+    pxr::UsdShadeShader to_shader = pxr::UsdShadeShader::Define(
+        a_stage, shader_path.AppendChild(pxr::TfToken(pxr::TfMakeValidIdentifier(to_node->name))));
+
+    if (!from_shader.GetPrim().IsValid())
+      continue;
+
+    if (!to_shader.GetPrim().IsValid())
+      continue;
+
+    // TODO CLEAN
+    std::string toName(to_sock->identifier);
+    switch (to_node->type) {
+      case SH_NODE_MATH: {
+        if (toName == "Value_001")
+          toName = "Value2";
+        else
+          toName = "Value1";
+      } break;
+      case SH_NODE_VECTOR_MATH: {
+        if (toName == "Vector_001")
+          toName = "Vector2";
+        else if (toName == "Vector_002")
+          toName = "Vector3";
+        else
+          toName = "Vector1";
+      } break;
+      case SH_NODE_ADD_SHADER:
+      case SH_NODE_MIX_SHADER: {
+        if (toName == "Shader_001")
+          toName = "Closure2";
+        else if (toName == "Shader")
+          toName = "Closure1";
+      } break;
+      // Only needed in 4.21?
+      case SH_NODE_CURVE_RGB: {
+        if (toName == "Color")
+          toName = "Value";
+      } break;
+    }
+    to_lower(toName);
+
+    // TODO CLEAN
+    std::string fromName(from_sock->identifier);
+    switch (from_node->type) {
+      case SH_NODE_ADD_SHADER:
+      case SH_NODE_MIX_SHADER: {
+        fromName = "Closure";
+      } break;
+      // Only needed in 4.21?
+      case SH_NODE_CURVE_RGB: {
+        if (fromName == "Color")
+          fromName = "Value";
+      } break;
+    }
+    to_lower(fromName);
+
+    to_shader
+        .CreateInput(pxr::TfToken(pxr::TfMakeValidIdentifier(toName)),
+                     pxr::SdfValueTypeNames->Float)
+        .ConnectToSource(from_shader, pxr::TfToken(pxr::TfMakeValidIdentifier(fromName)));
+  }
+}
+
+/* Entry point to create USD Shade Material network from Cycles Node Graph
+ * This is needed for re-importing in to Blender and for HdCycles. */
+void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
+                                Material *material,
+                                pxr::UsdShadeMaterial &usd_material,
+                                bool a_asOvers = false)
+{
+  create_usd_cycles_material(a_stage, material->nodetree, usd_material, a_asOvers);
+}
+
+void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
+                                bNodeTree *ntree,
+                                pxr::UsdShadeMaterial &usd_material,
+                                bool a_asOvers = false)
+{
+
+  bNode *output = nullptr;
+
+  bNodeTree *localtree = ntreeLocalize(ntree);
+
+  ntree_shader_groups_expand_inputs(localtree);
+
+  ntree_shader_groups_flatten(localtree);
+
+  localize(localtree, localtree);
+
+  usd_define_or_over<pxr::UsdGeomScope>(
+      a_stage, usd_material.GetPath().AppendChild(cyclestokens::cycles), a_asOvers);
+
+  store_cycles_nodes(a_stage,
+                     localtree,
+                     usd_material.GetPath().AppendChild(cyclestokens::cycles),
+                     &output,
+                     a_asOvers);
+  link_cycles_nodes(a_stage,
+                    usd_material,
+                    localtree,
+                    usd_material.GetPath().AppendChild(cyclestokens::cycles),
+                    a_asOvers);
+
+  ntreeFreeLocalTree(localtree);
+  MEM_freeN(localtree);
+}
+
+/* Entry point to create USD Shade Material network from Blender "Viewport Display" */
+void create_usd_viewport_material(USDExporterContext const &usd_export_context_,
+                                  Material *material,
+                                  pxr::UsdShadeMaterial &usd_material)
+{
+  // Construct the shader.
+  pxr::SdfPath shader_path = usd_material.GetPath().AppendChild(usdtokens::preview_shader);
+  pxr::UsdShadeShader shader = (usd_export_context_.export_params.export_as_overs) ?
+                                   pxr::UsdShadeShader(
+                                       usd_export_context_.stage->OverridePrim(shader_path)) :
+                                   pxr::UsdShadeShader::Define(usd_export_context_.stage,
+                                                               shader_path);
+  shader.CreateIdAttr(pxr::VtValue(usdtokens::preview_surface));
+  shader.CreateInput(usdtokens::diffuse_color, pxr::SdfValueTypeNames->Color3f)
+      .Set(pxr::GfVec3f(material->r, material->g, material->b));
+  shader.CreateInput(usdtokens::roughness, pxr::SdfValueTypeNames->Float).Set(material->roughness);
+  shader.CreateInput(usdtokens::metallic, pxr::SdfValueTypeNames->Float).Set(material->metallic);
+
+  // Connect the shader and the material together.
+  usd_material.CreateSurfaceOutput().ConnectToSource(shader, usdtokens::surface);
+}
+
+}  // namespace USD

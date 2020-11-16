@@ -215,7 +215,7 @@ void AbstractHierarchyIterator::export_graph_construct()
 
     // Export the duplicated objects instanced by this object.
     ListBase *lb = object_duplilist(depsgraph_, scene, object);
-    if (lb) {
+    if (lb && object->particlesystem.first == nullptr) {
       // Construct the set of duplicated objects, so that later we can determine whether a parent
       // is also duplicated itself.
       std::set<Object *> dupli_set;
@@ -340,7 +340,7 @@ void AbstractHierarchyIterator::visit_object(Object *object,
   context->export_parent = export_parent;
   context->duplicator = nullptr;
   context->weak_export = weak_export;
-  context->animation_check_include_parent = false;
+  context->animation_check_include_parent = true;
   context->export_path = "";
   context->original_export_path = "";
   copy_m4_m4(context->matrix_world, object->obmat);
@@ -364,7 +364,7 @@ void AbstractHierarchyIterator::visit_dupli_object(DupliObject *dupli_object,
                                                    const std::set<Object *> &dupli_set)
 {
   ExportGraph::key_type graph_index;
-  bool animation_check_include_parent = false;
+  bool animation_check_include_parent = true;
 
   HierarchyContext *context = new HierarchyContext();
   context->object = dupli_object->ob;
@@ -380,12 +380,16 @@ void AbstractHierarchyIterator::visit_dupli_object(DupliObject *dupli_object,
     // The parent object is part of the duplicated collection.
     context->export_parent = parent;
     graph_index = std::make_pair(parent, duplicator);
+    // This bool used to be false by default
+    // This was stopping a certain combination of drivers
+    // and rigging to not properly export.
+    // For now, we have switched to only setting to false here
+    animation_check_include_parent = false;
   }
   else {
     /* The parent object is NOT part of the duplicated collection. This means that the world
      * transform of this dupli-object can be influenced by objects that are not part of its
      * export graph. */
-    animation_check_include_parent = true;
     context->export_parent = duplicator;
     graph_index = std::make_pair(duplicator, nullptr);
   }

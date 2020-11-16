@@ -21,10 +21,12 @@
 #include "usd_hierarchy_iterator.h"
 #include "usd_writer_abstract.h"
 #include "usd_writer_camera.h"
+#include "usd_writer_curve.h"
 #include "usd_writer_hair.h"
 #include "usd_writer_light.h"
 #include "usd_writer_mesh.h"
 #include "usd_writer_metaball.h"
+#include "usd_writer_particle.h"
 #include "usd_writer_transform.h"
 
 #include <string>
@@ -81,9 +83,15 @@ const pxr::UsdTimeCode &USDHierarchyIterator::get_export_time_code() const
   return export_time_;
 }
 
-USDExporterContext USDHierarchyIterator::create_usd_export_context(const HierarchyContext *context)
+USDExporterContext USDHierarchyIterator::create_usd_export_context(const HierarchyContext *context,
+                                                                   bool mergeTransformAndShape)
 {
-  return USDExporterContext{depsgraph_, stage_, pxr::SdfPath(context->export_path), this, params_};
+  pxr::SdfPath prim_path = pxr::SdfPath(std::string(params_.root_prim_path) +
+                                        context->export_path);
+  // TODO: Somewhat of a workaround. There could be a better way to incoporate this...
+  if (mergeTransformAndShape)
+    prim_path = prim_path.GetParentPath();
+  return USDExporterContext{depsgraph_, stage_, prim_path, this, params_};
 }
 
 AbstractHierarchyWriter *USDHierarchyIterator::create_transform_writer(
@@ -94,25 +102,40 @@ AbstractHierarchyWriter *USDHierarchyIterator::create_transform_writer(
 
 AbstractHierarchyWriter *USDHierarchyIterator::create_data_writer(const HierarchyContext *context)
 {
-  USDExporterContext usd_export_context = create_usd_export_context(context);
+  USDExporterContext usd_export_context = create_usd_export_context(
+      context, params_.merge_transform_and_shape);
   USDAbstractWriter *data_writer = nullptr;
 
   switch (context->object->type) {
     case OB_MESH:
-      data_writer = new USDMeshWriter(usd_export_context);
+      if (usd_export_context.export_params.export_meshes)
+        data_writer = new USDMeshWriter(usd_export_context);
+      else
+        return nullptr;
       break;
     case OB_CAMERA:
-      data_writer = new USDCameraWriter(usd_export_context);
+      if (usd_export_context.export_params.export_cameras)
+        data_writer = new USDCameraWriter(usd_export_context);
+      else
+        return nullptr;
       break;
     case OB_LAMP:
-      data_writer = new USDLightWriter(usd_export_context);
+      if (usd_export_context.export_params.export_lights)
+        data_writer = new USDLightWriter(usd_export_context);
+      else
+        return nullptr;
       break;
     case OB_MBALL:
       data_writer = new USDMetaballWriter(usd_export_context);
       break;
-
     case OB_EMPTY:
     case OB_CURVE:
+      if (usd_export_context.export_params.export_curves) {
+        data_writer = new USDCurveWriter(usd_export_context);
+      }
+      else
+        return nullptr;
+      break;
     case OB_SURF:
     case OB_FONT:
     case OB_SPEAKER:
@@ -142,9 +165,13 @@ AbstractHierarchyWriter *USDHierarchyIterator::create_hair_writer(const Hierarch
   return new USDHairWriter(create_usd_export_context(context));
 }
 
-AbstractHierarchyWriter *USDHierarchyIterator::create_particle_writer(const HierarchyContext *)
+AbstractHierarchyWriter *USDHierarchyIterator::create_particle_writer(
+    const HierarchyContext *context)
 {
-  return nullptr;
+  if (!params_.export_particles) {
+    return nullptr;
+  }
+  return new USDParticleWriter(create_usd_export_context(context));
 }
 
 }  // namespace USD
