@@ -5777,8 +5777,12 @@ static void rna_def_modifier_meshseqcache(BlenderRNA *brna)
       {MOD_MESHSEQ_READ_POLY, "POLY", 0, "Faces", ""},
       {MOD_MESHSEQ_READ_UV, "UV", 0, "UV", ""},
       {MOD_MESHSEQ_READ_COLOR, "COLOR", 0, "Color", ""},
+      {MOD_MESHSEQ_READ_ATTR,  "ATTR", 0, "Attributes", ""},
+      {MOD_MESHSEQ_READ_VELS,  "VELS", 0, "Velocities", ""},
       {0, NULL, 0, NULL, NULL},
   };
+  // USD Import re-added these. We are unsure as to why they were removed
+  // They are necessary for full USD Import of data
 
   prop = RNA_def_property(srna, "read_data", PROP_ENUM, PROP_NONE);
   RNA_def_property_flag(prop, PROP_ENUM_FLAG);

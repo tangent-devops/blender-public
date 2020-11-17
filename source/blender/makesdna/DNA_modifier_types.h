@@ -2023,8 +2023,10 @@ typedef struct MeshSeqCacheModifierData {
   /** 1024 = FILE_MAX. */
   char object_path[1024];
 
+  float vel_fac;
+
   char read_flag;
-  char _pad[7];
+  char _pad[3];
 
   /* Runtime. */
   struct CacheReader *reader;
@@ -2037,7 +2039,11 @@ enum {
   MOD_MESHSEQ_READ_POLY = (1 << 1),
   MOD_MESHSEQ_READ_UV = (1 << 2),
   MOD_MESHSEQ_READ_COLOR = (1 << 3),
+  MOD_MESHSEQ_READ_ATTR  = (1 << 4),
+  MOD_MESHSEQ_READ_VELS  = (1 << 5),
 };
+// USD Import re-added attr and vel. We are unsure as to why they were removed
+// They are necessary for full USD Import of data
 
 typedef struct SDefBind {
   unsigned int *vert_inds;

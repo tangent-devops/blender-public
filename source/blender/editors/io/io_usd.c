@@ -22,22 +22,29 @@
  */
 
 #ifdef WITH_USD
+#  include <string.h>
 #  include "DNA_space_types.h"
+#  include "DNA_modifier_types.h"
 
 #  include "BKE_context.h"
 #  include "BKE_main.h"
 #  include "BKE_report.h"
 
+#  include "BLI_blenlib.h"
 #  include "BLI_path_util.h"
 #  include "BLI_string.h"
 #  include "BLI_utildefines.h"
 
 #  include "BLT_translation.h"
 
+#  include "ED_object.h"
+
 #  include "MEM_guardedalloc.h"
 
 #  include "RNA_access.h"
 #  include "RNA_define.h"
+
+#  include "RNA_enum_types.h"
 
 #  include "UI_interface.h"
 #  include "UI_resources.h"
@@ -50,6 +57,8 @@
 #  include "io_usd.h"
 #  include "usd.h"
 
+#  include "stdio.h"
+
 const EnumPropertyItem rna_enum_usd_export_evaluation_mode_items[] = {
     {DAG_EVAL_RENDER,
      "RENDER",
@@ -61,6 +70,16 @@ const EnumPropertyItem rna_enum_usd_export_evaluation_mode_items[] = {
      0,
      "Viewport",
      "Use Viewport settings for object visibility, modifier settings, etc"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_usd_import_read_flags[] = {
+    {MOD_MESHSEQ_READ_VERT, "VERT", 0, "Vertex", ""},
+    {MOD_MESHSEQ_READ_POLY, "POLY", 0, "Faces", ""},
+    {MOD_MESHSEQ_READ_UV, "UV", 0, "UV", ""},
+    {MOD_MESHSEQ_READ_COLOR, "COLOR", 0, "Color", ""},
+    {MOD_MESHSEQ_READ_ATTR, "ATTR", 0, "Attributes", ""},
+    {MOD_MESHSEQ_READ_VELS, "VELS", 0, "Velocities", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -228,6 +247,277 @@ void WM_OT_usd_export(struct wmOperatorType *ot)
                "Use Settings for",
                "Determines visibility of objects, modifier settings, and other areas where there "
                "are different settings for viewport and rendering");
+}
+
+/* ====== USD Import ====== */
+
+static int wm_usd_import_invoke(bContext *C, wmOperator *op, const wmEvent *event)
+{
+  if (!RNA_struct_property_is_set(op->ptr, "as_background_job")) {
+    RNA_boolean_set(op->ptr, "as_background_job", true);
+  }
+  return WM_operator_filesel(C, op, event);
+}
+
+static int wm_usd_import_exec(bContext *C, wmOperator *op)
+{
+  if (!RNA_struct_property_is_set(op->ptr, "filepath")) {
+    BKE_report(op->reports, RPT_ERROR, "No filename given");
+    return OPERATOR_CANCELLED;
+  }
+
+  char filename[FILE_MAX];
+  RNA_string_get(op->ptr, "filepath", filename);
+
+  const float scale = RNA_float_get(op->ptr, "scale");
+  const float vel_scale = RNA_float_get(op->ptr, "vel_scale");
+  const bool is_sequence = RNA_boolean_get(op->ptr, "is_sequence");
+  const bool set_frame_range = RNA_boolean_get(op->ptr, "set_frame_range");
+  const bool validate_meshes = RNA_boolean_get(op->ptr, "validate_meshes");
+  const bool as_background_job = RNA_boolean_get(op->ptr, "as_background_job");
+  const char global_read_flag = RNA_enum_get(op->ptr, "global_read_flag");
+
+  const bool import_cameras = RNA_boolean_get(op->ptr, "import_cameras");
+  const bool import_curves = RNA_boolean_get(op->ptr, "import_curves");
+  const bool import_lights = RNA_boolean_get(op->ptr, "import_lights");
+  const bool import_materials = RNA_boolean_get(op->ptr, "import_materials");
+  const bool import_meshes = RNA_boolean_get(op->ptr, "import_meshes");
+  const bool import_volumes = RNA_boolean_get(op->ptr, "import_volumes");
+
+  const bool import_subdiv = RNA_boolean_get(op->ptr, "import_subdiv");
+
+  const bool create_collection = RNA_boolean_get(op->ptr, "create_collection");
+
+  char *prim_path_mask = malloc(1024);
+  RNA_string_get(op->ptr, "prim_path_mask", prim_path_mask);
+
+  int offset = 0;
+  int sequence_len = 1;
+
+  if (is_sequence) {
+    // @TODO: Not Implemented
+    /*sequence_len = get_sequence_len(filename, &offset);
+    if (sequence_len < 0) {
+      BKE_report(op->reports, RPT_ERROR, "Unable to determine ABC sequence length");
+      return OPERATOR_CANCELLED;
+    }*/
+  }
+
+  /* Switch out of edit mode to avoid being stuck in it (T54326). */
+  Object *obedit = CTX_data_edit_object(C);
+  if (obedit) {
+    ED_object_mode_toggle(C, OB_MODE_EDIT);
+  }
+
+  struct USDImportParams params = {
+      scale,
+      vel_scale,
+      is_sequence,
+      set_frame_range,
+      sequence_len,
+      offset,
+      validate_meshes,
+      global_read_flag,
+      import_cameras,
+      import_curves,
+      import_lights,
+      import_materials,
+      import_meshes,
+      import_volumes,
+      prim_path_mask,
+      import_subdiv,
+      create_collection,
+  };
+
+  bool ok = USD_import(C, filename, &params, as_background_job);
+
+  return as_background_job || ok ? OPERATOR_FINISHED : OPERATOR_CANCELLED;
+}
+
+static void wm_usd_import_draw(bContext *UNUSED(C), wmOperator *op)
+{
+  uiLayout *layout = op->layout;
+  struct PointerRNA *ptr = op->ptr;
+
+  uiLayoutSetPropSep(layout, false);
+
+  uiLayout *box = uiLayoutBox(layout);
+  uiLayout *row = uiLayoutRow(box, false);
+
+  uiItemL(box, IFACE_("USD Import"), ICON_NONE);
+
+  row = uiLayoutRow(box, false);
+  uiItemL(row, IFACE_("Global Read Flag:"), ICON_NONE);
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "global_read_flag", UI_ITEM_R_EXPAND, NULL, ICON_NONE);
+
+  row = uiLayoutRow(box, false);
+  uiItemL(row, IFACE_("Manual Transform:"), ICON_NONE);
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "scale", 0, NULL, ICON_NONE);
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "vel_scale", 0, NULL, ICON_NONE);
+
+  box = uiLayoutBox(layout);
+  row = uiLayoutRow(box, false);
+  uiItemL(row, IFACE_("Options:"), ICON_NONE);
+
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "relative_path", 0, NULL, ICON_NONE);
+
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "set_frame_range", 0, NULL, ICON_NONE);
+
+  // TODO: Not supported
+  // row = uiLayoutRow(box, false);
+  // uiItemR(row, ptr, "is_sequence", 0, NULL, ICON_NONE);
+
+  // row = uiLayoutRow(box, false);
+  // uiItemR(row, ptr, "validate_meshes", 0, NULL, ICON_NONE);
+
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "import_subdiv", 0, NULL, ICON_NONE);
+
+  row = uiLayoutRow(box, false);
+  uiItemR(row, ptr, "create_collection", 0, NULL, ICON_NONE);
+
+  // row = uiLayoutRow(box, false);
+  // uiItemR(row, ptr, "prim_path_mask", 0, NULL, ICON_NONE);
+
+  uiLayout *prim_path_mask_box = uiLayoutBox(box);
+  row = uiLayoutRow(prim_path_mask_box, false);
+  uiItemL(row, IFACE_("Prim Path Mask:"), ICON_NONE);
+
+  row = uiLayoutRow(prim_path_mask_box, false);
+  uiItemR(row, ptr, "prim_path_mask", 0, NULL, ICON_NONE);
+
+  box = uiLayoutBox(layout);
+  uiItemL(box, IFACE_("Primitive Types:"), ICON_OBJECT_DATA);
+  uiItemR(box, ptr, "import_cameras", 0, NULL, ICON_NONE);
+  uiItemR(box, ptr, "import_curves", 0, NULL, ICON_NONE);
+  uiItemR(box, ptr, "import_lights", 0, NULL, ICON_NONE);
+  uiItemR(box, ptr, "import_materials", 0, NULL, ICON_NONE);
+  uiItemR(box, ptr, "import_meshes", 0, NULL, ICON_NONE);
+  uiItemR(box, ptr, "import_volumes", 0, NULL, ICON_NONE);
+}
+
+void WM_OT_usd_import(struct wmOperatorType *ot)
+{
+  PropertyRNA *prop;
+
+  ot->name = "Import USD";
+  ot->description = "Import USD stage into current scene";
+  ot->idname = "WM_OT_usd_import";
+
+  ot->invoke = wm_usd_import_invoke;
+  ot->exec = wm_usd_import_exec;
+  ot->poll = WM_operator_winactive;
+  ot->ui = wm_usd_import_draw;
+
+  WM_operator_properties_filesel(ot,
+                                 FILE_TYPE_FOLDER | FILE_TYPE_USD,
+                                 FILE_BLENDER,
+                                 FILE_SAVE,
+                                 WM_FILESEL_FILEPATH | WM_FILESEL_RELPATH | WM_FILESEL_SHOW_PROPS,
+                                 FILE_DEFAULTDISPLAY,
+                                 FILE_SORT_ALPHA);
+
+  RNA_def_float(
+      ot->srna,
+      "scale",
+      1.0f,
+      0.0001f,
+      1000.0f,
+      "Scale",
+      "Value by which to enlarge or shrink the objects with respect to the world's origin",
+      0.0001f,
+      1000.0f);
+  RNA_def_float(ot->srna,
+                "vel_scale",
+                1.0f,
+                0.0001f,
+                1000.0f,
+                "Velocity Scale",
+                "Amount to scale velocity",
+                0.0001f,
+                1000.0f);
+
+  RNA_def_boolean(
+      ot->srna,
+      "set_frame_range",
+      true,
+      "Set Frame Range",
+      "If checked, update scene's start and end frame to match those of the USD archive");
+
+  RNA_def_boolean(ot->srna,
+                  "validate_meshes",
+                  0,
+                  "Validate Meshes",
+                  "Check imported mesh objects for invalid data (slow)");
+
+  RNA_def_boolean(ot->srna,
+                  "is_sequence",
+                  false,
+                  "Is Sequence",
+                  "Only set to true if the cache is split into separate files. (UNSUPPORTED)");
+
+  RNA_def_boolean(
+      ot->srna,
+      "as_background_job",
+      false,
+      "Run as Background Job",
+      "Enable this to run the export in the background, disable to block Blender while exporting. "
+      "This option is deprecated; EXECUTE this operator to run in the foreground, and INVOKE it "
+      "to run as a background job");
+
+  RNA_def_boolean(
+      ot->srna, "import_cameras", true, "Cameras", "When checked, all cameras will be imported");
+  RNA_def_boolean(
+      ot->srna, "import_curves", true, "Curves", "When checked, all curves will be imported");
+  RNA_def_boolean(
+      ot->srna, "import_lights", true, "Lights", "When checked, all lights will be imported");
+  RNA_def_boolean(ot->srna,
+                  "import_materials",
+                  true,
+                  "Materials",
+                  "When checked, all materials will be imported");
+  RNA_def_boolean(
+      ot->srna, "import_meshes", true, "Meshes", "When checked, all meshes will be imported");
+  RNA_def_boolean(ot->srna,
+                  "import_volumes",
+                  true,
+                  "Volumes",
+                  "(Tangent Specific) When checked, all volumes will be imported");
+
+  RNA_def_boolean(ot->srna,
+                  "import_subdiv",
+                  true,
+                  "Import Subdiv Scheme",
+                  "If enabled, subdiv surface modifiers will be created based on USD "
+                  "SubdivisionScheme attribute");
+
+  RNA_def_boolean(ot->srna,
+                  "create_collection",
+                  false,
+                  "Create Collection",
+                  "If enabled, all import objects will be added to a new collection");
+
+  prop = RNA_def_enum(ot->srna,
+                      "global_read_flag",
+                      rna_enum_usd_import_read_flags,
+                      0,
+                      "Flags",
+                      "Set read flag for all usd import mesh sequence cache modifiers");
+
+  RNA_def_property_flag(prop, PROP_ENUM_FLAG);
+  RNA_def_property_enum_default(prop, MOD_MESHSEQ_READ_ALL);
+
+  RNA_def_string(ot->srna,
+                 "prim_path_mask",
+                 NULL,
+                 1024,
+                 "",
+                 "If set, this will specify a specific primitive from the usd stage");
 }
 
 #endif /* WITH_USD */

@@ -76,7 +76,7 @@ typedef struct CustomData {
    * MUST be >= CD_NUMTYPES, but we cant use a define here.
    * Correct size is ensured in CustomData_update_typemap assert().
    */
-  int typemap[47];
+  int typemap[53];
   /** Number of layers, size of layers array. */
   int totlayer, maxlayer;
   /** In editmode, total size of all data layers. */
@@ -153,7 +153,15 @@ typedef enum CustomDataType {
   CD_HAIRCURVE = 45,
   CD_HAIRMAPPING = 46,
 
-  CD_NUMTYPES = 47,
+  
+  CD_VALUE_FLOAT    = 47,
+  CD_VALUE_INT      = 48,
+  CD_VALUE_F3       = 49,
+  CD_VALUE_I3       = 50,
+
+  CD_VELOCITY         = 51,
+
+  CD_NUMTYPES = 53,
 } CustomDataType;
 
 /* Bits for CustomDataMask */

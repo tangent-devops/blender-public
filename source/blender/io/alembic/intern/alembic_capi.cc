@@ -110,18 +110,14 @@ using Alembic::AbcGeom::XformSample;
 
 using Alembic::AbcMaterial::IMaterial;
 
-struct AbcArchiveHandle {
-  int unused;
-};
-
-ABC_INLINE ArchiveReader *archive_from_handle(AbcArchiveHandle *handle)
+ABC_INLINE ArchiveReader *archive_from_handle(CacheArchiveHandle *handle)
 {
   return reinterpret_cast<ArchiveReader *>(handle);
 }
 
-ABC_INLINE AbcArchiveHandle *handle_from_archive(ArchiveReader *archive)
+ABC_INLINE CacheArchiveHandle *handle_from_archive(ArchiveReader *archive)
 {
-  return reinterpret_cast<AbcArchiveHandle *>(archive);
+  return reinterpret_cast<CacheArchiveHandle *>(archive);
 }
 
 //#define USE_NURBS
@@ -171,8 +167,8 @@ static bool gather_objects_paths(const IObject &object, ListBase *object_paths)
   }
 
   if (get_path) {
-    void *abc_path_void = MEM_callocN(sizeof(AlembicObjectPath), "AlembicObjectPath");
-    AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(abc_path_void);
+    void *abc_path_void = MEM_callocN(sizeof(CacheObjectPath), "CacheObjectPath");
+    CacheObjectPath *abc_path = static_cast<CacheObjectPath *>(abc_path_void);
 
     BLI_strncpy(abc_path->path, object.getFullName().c_str(), sizeof(abc_path->path));
     BLI_addtail(object_paths, abc_path);
@@ -181,9 +177,9 @@ static bool gather_objects_paths(const IObject &object, ListBase *object_paths)
   return parent_is_part_of_this_object;
 }
 
-AbcArchiveHandle *ABC_create_handle(struct Main *bmain,
-                                    const char *filename,
-                                    ListBase *object_paths)
+CacheArchiveHandle *ABC_create_handle(struct Main *bmain,
+                                      const char *filename,
+                                      ListBase *object_paths)
 {
   ArchiveReader *archive = new ArchiveReader(bmain, filename);
 
@@ -199,7 +195,7 @@ AbcArchiveHandle *ABC_create_handle(struct Main *bmain,
   return handle_from_archive(archive);
 }
 
-void ABC_free_handle(AbcArchiveHandle *handle)
+void ABC_free_handle(CacheArchiveHandle *handle)
 {
   delete archive_from_handle(handle);
 }
@@ -570,8 +566,8 @@ static std::pair<bool, AbcObjectReader *> visit_object(
     readers.push_back(reader);
     reader->incref();
 
-    AlembicObjectPath *abc_path = static_cast<AlembicObjectPath *>(
-        MEM_callocN(sizeof(AlembicObjectPath), "AlembicObjectPath"));
+    CacheObjectPath *abc_path = static_cast<CacheObjectPath *>(
+        MEM_callocN(sizeof(CacheObjectPath), "CacheObjectPath"));
     BLI_strncpy(abc_path->path, full_name.c_str(), sizeof(abc_path->path));
     BLI_addtail(&settings.cache_file->object_paths, abc_path);
 
@@ -1048,7 +1044,7 @@ void CacheReader_incref(CacheReader *reader)
   abc_reader->incref();
 }
 
-CacheReader *CacheReader_open_alembic_object(AbcArchiveHandle *handle,
+CacheReader *CacheReader_open_alembic_object(CacheArchiveHandle *handle,
                                              CacheReader *reader,
                                              Object *object,
                                              const char *object_path)

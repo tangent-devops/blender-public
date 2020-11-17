@@ -33,7 +33,7 @@ struct Object;
 struct Scene;
 struct bContext;
 
-typedef struct AbcArchiveHandle AbcArchiveHandle;
+typedef struct CacheArchiveHandle CacheArchiveHandle;
 
 enum {
   ABC_ARCHIVE_OGAWA = 0,
@@ -104,11 +104,11 @@ bool ABC_import(struct bContext *C,
                 bool validate_meshes,
                 bool as_background_job);
 
-AbcArchiveHandle *ABC_create_handle(struct Main *bmain,
+CacheArchiveHandle *ABC_create_handle(struct Main *bmain,
                                     const char *filename,
                                     struct ListBase *object_paths);
 
-void ABC_free_handle(AbcArchiveHandle *handle);
+void ABC_free_handle(CacheArchiveHandle *handle);
 
 void ABC_get_transform(struct CacheReader *reader,
                        float r_mat_world[4][4],
@@ -132,7 +132,7 @@ bool ABC_mesh_topology_changed(struct CacheReader *reader,
 void CacheReader_incref(struct CacheReader *reader);
 void CacheReader_free(struct CacheReader *reader);
 
-struct CacheReader *CacheReader_open_alembic_object(struct AbcArchiveHandle *handle,
+struct CacheReader *CacheReader_open_alembic_object(struct CacheArchiveHandle *handle,
                                                     struct CacheReader *reader,
                                                     struct Object *object,
                                                     const char *object_path);

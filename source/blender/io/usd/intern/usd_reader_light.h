@@ -15,36 +15,28 @@
  */
 
 /** \file
- * \ingroup DNA
+ * \ingroup busd
  */
 
-#ifndef __DNA_CACHEFILE_DEFAULTS_H__
-#define __DNA_CACHEFILE_DEFAULTS_H__
+#ifndef __USD_READER_LIGHT_H__
+#define __USD_READER_LIGHT_H__
 
-/* Struct members on own line. */
-/* clang-format off */
+#include "usd.h"
+#include "usd_reader_xform.h"
 
-/* -------------------------------------------------------------------- */
-/** \name CacheFile Struct
- * \{ */
+class USDLightReader : public USDXformReader {
 
-#define _DNA_DEFAULT_CacheFile \
-  { \
-    .filepath[0] = '\0', \
-    .override_frame = false, \
-    .frame = 0.0f, \
-    .is_sequence = false, \
-    .scale = 1.0f, \
-    .object_paths ={NULL, NULL}, \
- \
-    .type = 0, \
-    .handle = NULL, \
-    .handle_filepath[0] = '\0', \
-    .handle_readers = NULL, \
+ public:
+  USDLightReader(pxr::UsdStageRefPtr stage,
+                 const pxr::UsdPrim &object,
+                 const USDImportParams &import_params,
+                 ImportSettings &settings)
+      : USDXformReader(stage, object, import_params, settings)
+  {
   }
 
-/** \} */
+  void createObject(Main *bmain, double motionSampleTime) override;
+  void readObjectData(Main *bmain, double motionSampleTime) override;
+};
 
-/* clang-format on */
-
-#endif /* __DNA_CACHEFILE_DEFAULTS_H__ */
+#endif /* __USD_READER_LIGHT_H__ */

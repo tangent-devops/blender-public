@@ -32,6 +32,17 @@ extern "C" {
 
 struct GSet;
 
+/* CacheFile::type */
+enum {
+  #ifdef WITH_ALEMBIC
+  CACHEFILE_TYPE_ALEMBIC = 1,
+  #endif
+  #ifdef WITH_USD
+  CACHEFILE_TYPE_USD = 2,
+  #endif
+  CACHE_FILE_TYPE_INVALID = 0,
+};
+
 /* CacheFile::flag */
 enum {
   CACHEFILE_DS_EXPAND = (1 << 0),
@@ -47,11 +58,15 @@ enum {
 
 /* Representation of an object's path inside the Alembic file.
  * Note that this is not a file path. */
-typedef struct AlembicObjectPath {
-  struct AlembicObjectPath *next, *prev;
+typedef struct CacheObjectPath {
+  struct CacheObjectPath *next, *prev;
 
   char path[4096];
-} AlembicObjectPath;
+} CacheObjectPath;
+
+typedef struct CacheArchiveHandle {
+  int unused;
+} CacheArchiveHandle;
 
 typedef struct CacheFile {
   ID id;
@@ -78,10 +93,12 @@ typedef struct CacheFile {
   short flag;
   short draw_flag; /* UNUSED */
 
-  char _pad[4];
+  char type;
+
+  char _pad[3];
 
   /* Runtime */
-  struct AbcArchiveHandle *handle;
+  struct CacheArchiveHandle *handle;
   char handle_filepath[1024];
   struct GSet *handle_readers;
 } CacheFile;
