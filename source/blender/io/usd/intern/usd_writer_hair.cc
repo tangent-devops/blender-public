@@ -38,6 +38,7 @@ USDHairWriter::USDHairWriter(const USDExporterContext &ctx) : USDAbstractWriter(
 {
 }
 
+// This was copied from source/intern/cycles/blender/blender_curves.cpp
 static float shaperadius(float shape, float root, float tip, float time)
 {
   assert(time >= 0.0f);
@@ -109,7 +110,7 @@ void USDHairWriter::do_write(HierarchyContext &context)
       float t = (float)point_index / (float)(point_count - 1);
       // if(point_index == point_count - 1) t = 0.95f;
       float root_rad = (close_tip && point_index == point_count - 1) ? 0 : hair_tip_rad;
-      widths.push_back(shaperadius(hair_shape, hair_root_rad, root_rad, t));
+      widths.push_back(shaperadius(hair_shape, hair_root_rad, root_rad, t) * 2.0f);
     }
   }
 
@@ -129,7 +130,7 @@ void USDHairWriter::do_write(HierarchyContext &context)
           points.push_back(pxr::GfVec3f(vert));
           float t = (float)point_index / (float)(point_count - 1);
           t = clamp_f(t, 0.0f, 0.95f);
-          widths.push_back(shaperadius(hair_shape, hair_root_rad, hair_tip_rad, t));
+          widths.push_back(shaperadius(hair_shape, hair_root_rad, hair_tip_rad, t) * 2.0f);
         }
       }
     }
