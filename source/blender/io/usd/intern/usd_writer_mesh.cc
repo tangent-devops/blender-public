@@ -374,7 +374,7 @@ void USDGenericMeshWriter::write_vertex_groups(const Object *ob,
             float w = vert->dw[j].weight;
             if (idx < num_groups)
             {
-              pv_data[idx][i] = w;
+              pv_data[idx][p_idx] = w;
             }
           }
         }
