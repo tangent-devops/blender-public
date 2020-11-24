@@ -345,7 +345,10 @@ void USDGenericMeshWriter::write_vertex_groups(const Object *ob,
         for (j = 0; j < vert->totweight; j++) {
           uint idx = vert->dw[j].def_nr;
           float w = vert->dw[j].weight;
-          pv_data[idx][i] = w;
+          if (idx < num_groups)
+          {
+            pv_data[idx][i] = w;
+          }
         }
       }
     }
@@ -369,7 +372,10 @@ void USDGenericMeshWriter::write_vertex_groups(const Object *ob,
           for (j = 0; j < vert->totweight; j++) {
             uint idx = vert->dw[j].def_nr;
             float w = vert->dw[j].weight;
-            pv_data[idx][p_idx] = w;
+            if (idx < num_groups)
+            {
+              pv_data[idx][i] = w;
+            }
           }
         }
         p_idx++;
