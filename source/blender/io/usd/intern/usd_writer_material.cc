@@ -572,7 +572,7 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
         break;
       // TexMapping tex_mapping;
       // ColorMapping color_mapping;
-      shader.CreateInput(pxr::TfToken("gradient_type"), pxr::SdfValueTypeNames->Int)
+      shader.CreateInput(pxr::TfToken("type"), pxr::SdfValueTypeNames->Int)
           .Set(grad_storage->gradient_type);
     } break;
 
