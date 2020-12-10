@@ -140,8 +140,8 @@ void USDHairWriter::do_write(HierarchyContext &context)
   pxr::UsdAttribute attr_vertex_counts = curves.CreateCurveVertexCountsAttr(pxr::VtValue(), true);
   pxr::UsdAttribute attr_widths = curves.CreateWidthsAttr(pxr::VtValue(), true);
   if (!attr_points.HasValue()) {
-    attr_points.Set(points, pxr::UsdTimeCode::Default());
-    attr_vertex_counts.Set(curve_point_counts, pxr::UsdTimeCode::Default());
+    attr_points.Set(points, timecode);
+    attr_vertex_counts.Set(curve_point_counts, timecode);
   }
   usd_value_writer_.SetAttribute(attr_points, pxr::VtValue(points), timecode);
   usd_value_writer_.SetAttribute(attr_vertex_counts, pxr::VtValue(curve_point_counts), timecode);
