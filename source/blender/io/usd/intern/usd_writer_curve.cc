@@ -191,6 +191,9 @@ void USDCurveWriter::do_write(HierarchyContext &context)
   pxr::UsdAttribute attr_vertex_counts = curves.CreateCurveVertexCountsAttr(pxr::VtValue(), true);
   pxr::UsdAttribute attr_widths = curves.CreateWidthsAttr(pxr::VtValue(), true);
 
+  // NOTE (Marcelo Sercheli): Code to set values at default time was removed since
+  // `timecode` will be default time in case of non-animation exports. For animated
+  // exports, USD will inter/extrapolate values linearly.
   usd_value_writer_.SetAttribute(attr_points, pxr::VtValue(verts), timecode);
   usd_value_writer_.SetAttribute(attr_vertex_counts, pxr::VtValue(curve_point_counts), timecode);
   usd_value_writer_.SetAttribute(attr_widths, pxr::VtValue(widths), timecode);
