@@ -224,7 +224,7 @@ void USDGenericMeshWriter::write_uv_maps(const Mesh *mesh,
                                       primvar_name.GetString()),
                          pxr::SdfValueTypeNames->String,
                          true)
-        .Set(std::string(layer->name), timecode);
+        .Set(std::string(layer->name), pxr::UsdTimeCode::Default());
   }
 
   if (usd_export_context_.export_params.convert_uv_to_st)
@@ -239,9 +239,9 @@ void USDGenericMeshWriter::write_uv_maps(const Mesh *mesh,
     uv_coords.push_back(pxr::GfVec2f(mloopuv[loop_idx].uv));
   }
 
-  if (!uv_coords_primvar.HasValue()) {
-    uv_coords_primvar.Set(uv_coords, pxr::UsdTimeCode::Default());
-  }
+  // NOTE (Marcelo Sercheli): Code to set values at default time was removed since
+  // `timecode` will be default time in case of non-animation exports. For animated
+  // exports, USD will inter/extrapolate values linearly.
   const pxr::UsdAttribute &uv_coords_attr = uv_coords_primvar.GetAttr();
   usd_value_writer_.SetAttribute(uv_coords_attr, pxr::VtValue(uv_coords), timecode);
 }
@@ -263,7 +263,7 @@ void USDGenericMeshWriter::write_vertex_colors(const Mesh *mesh,
                                       primvar_name.GetString()),
                          pxr::SdfValueTypeNames->String,
                          true)
-        .Set(std::string(layer->name), timecode);
+        .Set(std::string(layer->name), pxr::UsdTimeCode::Default());
   }
 
   pxr::UsdGeomPrimvarsAPI pvApi = pxr::UsdGeomPrimvarsAPI(usd_mesh);
@@ -347,7 +347,7 @@ void USDGenericMeshWriter::write_vertex_groups(const Object *ob,
           float w = vert->dw[j].weight;
           /* This out of bounds check is necessary because MDeformVert.totweight can be
           larger than the number of bDeformGroup structs in Object.defbase. It appears to be
-          a Blender bug that can cause this scenario.*/ 
+          a Blender bug that can cause this scenario.*/
           if (idx < num_groups)
           {
             pv_data[idx][i] = w;
@@ -377,7 +377,7 @@ void USDGenericMeshWriter::write_vertex_groups(const Object *ob,
             float w = vert->dw[j].weight;
             /* This out of bounds check is necessary because MDeformVert.totweight can be
             larger than the number of bDeformGroup structs in Object.defbase. Appears to be
-            a Blender bug that can cause this scenario.*/ 
+            a Blender bug that can cause this scenario.*/
             if (idx < num_groups)
             {
               pv_data[idx][p_idx] = w;
@@ -456,7 +456,6 @@ void USDGenericMeshWriter::write_face_maps(const Object *ob,
 void USDGenericMeshWriter::write_mesh(HierarchyContext &context, Mesh *mesh)
 {
   pxr::UsdTimeCode timecode = get_export_time_code();
-  pxr::UsdTimeCode defaultTime = pxr::UsdTimeCode::Default();
   pxr::UsdStageRefPtr stage = usd_export_context_.stage;
 
   pxr::UsdGeomMesh usd_mesh =
@@ -500,14 +499,9 @@ void USDGenericMeshWriter::write_mesh(HierarchyContext &context, Mesh *mesh)
     pxr::UsdAttribute attr_face_vertex_indices = usd_mesh.CreateFaceVertexIndicesAttr(
         pxr::VtValue(), true);
 
-    if (!attr_points.HasValue()) {
-      // Provide the initial value as default. This makes USD write the value as constant if they
-      // don't change over time.
-      attr_points.Set(usd_mesh_data.points, defaultTime);
-      attr_face_vertex_counts.Set(usd_mesh_data.face_vertex_counts, defaultTime);
-      attr_face_vertex_indices.Set(usd_mesh_data.face_indices, defaultTime);
-    }
-
+    // NOTE (Marcelo Sercheli): Code to set values at default time was removed since
+    // `timecode` will be default time in case of non-animation exports. For animated
+    // exports, USD will inter/extrapolate values linearly.
     usd_value_writer_.SetAttribute(attr_points, pxr::VtValue(usd_mesh_data.points), timecode);
     usd_value_writer_.SetAttribute(
         attr_face_vertex_counts, pxr::VtValue(usd_mesh_data.face_vertex_counts), timecode);
@@ -522,12 +516,9 @@ void USDGenericMeshWriter::write_mesh(HierarchyContext &context, Mesh *mesh)
       pxr::UsdAttribute attr_crease_sharpness = usd_mesh.CreateCreaseSharpnessesAttr(
           pxr::VtValue(), true);
 
-      if (!attr_crease_lengths.HasValue()) {
-        attr_crease_lengths.Set(usd_mesh_data.crease_lengths, defaultTime);
-        attr_crease_indices.Set(usd_mesh_data.crease_vertex_indices, defaultTime);
-        attr_crease_sharpness.Set(usd_mesh_data.crease_sharpnesses, defaultTime);
-      }
-
+      // NOTE (Marcelo Sercheli): Code to set values at default time was removed since
+      // `timecode` will be default time in case of non-animation exports. For animated
+      // exports, USD will inter/extrapolate values linearly.
       usd_value_writer_.SetAttribute(
           attr_crease_lengths, pxr::VtValue(usd_mesh_data.crease_lengths), timecode);
       usd_value_writer_.SetAttribute(
@@ -735,9 +726,10 @@ void USDGenericMeshWriter::write_normals(const Mesh *mesh, pxr::UsdGeomMesh usd_
   }
 
   pxr::UsdAttribute attr_normals = usd_mesh.CreateNormalsAttr(pxr::VtValue(), true);
-  if (!attr_normals.HasValue()) {
-    attr_normals.Set(loop_normals, pxr::UsdTimeCode::Default());
-  }
+
+  // NOTE (Marcelo Sercheli): Code to set values at default time was removed since
+  // `timecode` will be default time in case of non-animation exports. For animated
+  // exports, USD will inter/extrapolate values linearly.
   usd_value_writer_.SetAttribute(attr_normals, pxr::VtValue(loop_normals), timecode);
   usd_mesh.SetNormalsInterpolation(pxr::UsdGeomTokens->faceVarying);
 }
