@@ -253,7 +253,7 @@ static const std::map<int, std::string> node_clamp_type_conversion = {
     {NODE_CLAMP_MINMAX, "minmax"},
     {NODE_CLAMP_RANGE, "range"},
 };
-static const std::map<int, std::string> node_math_item_conversion = {
+static const std::map<int, std::string> node_math_type_conversion = {
     {NODE_MATH_ADD, "add"},
     {NODE_MATH_SUBTRACT, "subtract"},
     {NODE_MATH_MULTIPLY, "multiply"},
@@ -295,7 +295,7 @@ static const std::map<int, std::string> node_math_item_conversion = {
     {NODE_MATH_SMOOTH_MAX, "smoothmax"},
     {NODE_MATH_COMPARE, "compare"},
 };
-static const std::map<int, std::string> node_vector_math_item_conversion = {
+static const std::map<int, std::string> node_vector_math_type_conversion = {
     {NODE_VECTOR_MATH_ADD, "add"},
     {NODE_VECTOR_MATH_SUBTRACT, "subtract"},
     {NODE_VECTOR_MATH_MULTIPLY, "multiply"},
@@ -407,44 +407,44 @@ static const std::map<int, std::string> node_gradient_tex_type_conversion = {
     {SHD_BLEND_QUADRATIC_SPHERE, "quadratic_sphere"},
     {SHD_BLEND_SPHERICAL, "spherical"},
 };
-static const std::map<int, std::string> node_glossy_item_conversion = {
+static const std::map<int, std::string> node_glossy_distribution_conversion = {
     {SHD_GLOSSY_SHARP, "sharp"},
     {SHD_GLOSSY_BECKMANN, "beckmann"},
     {SHD_GLOSSY_GGX, "GGX"},
     {SHD_GLOSSY_ASHIKHMIN_SHIRLEY, "ashikhmin_shirley"},
     {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
 };
-static const std::map<int, std::string> node_anisotropic_item_conversion = {
+static const std::map<int, std::string> node_anisotropic_distribution_conversion = {
     {SHD_GLOSSY_BECKMANN, "beckmann"},
     {SHD_GLOSSY_GGX, "GGX"},
     {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
     {SHD_GLOSSY_ASHIKHMIN_SHIRLEY, "ashikhmin_shirley"},
 };
-static const std::map<int, std::string> node_glass_item_conversion = {
+static const std::map<int, std::string> node_glass_distribution_conversion = {
     {SHD_GLOSSY_SHARP, "sharp"},
     {SHD_GLOSSY_BECKMANN, "beckmann"},
     {SHD_GLOSSY_GGX, "GGX"},
     {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
 };
-static const std::map<int, std::string> node_refraction_item_conversion = {
+static const std::map<int, std::string> node_refraction_distribution_conversion = {
     {SHD_GLOSSY_SHARP, "sharp"},
     {SHD_GLOSSY_BECKMANN, "beckmann"},
     {SHD_GLOSSY_GGX, "GGX"},
 };
-static const std::map<int, std::string> node_toon_item_conversion = {
+static const std::map<int, std::string> node_toon_component_conversion = {
     {SHD_TOON_DIFFUSE, "diffuse"},
     {SHD_TOON_GLOSSY, "glossy"},
 };
-static const std::map<int, std::string> node_hair_item_conversion = {
+static const std::map<int, std::string> node_hair_component_conversion = {
     {SHD_HAIR_REFLECTION, "reflection"},
     {SHD_HAIR_TRANSMISSION, "transmission"},
 };
 
-static const std::map<int, std::string> node_principled_distribution_item_conversion = {
+static const std::map<int, std::string> node_principled_distribution_conversion = {
     {SHD_GLOSSY_GGX, "GGX"},
     {SHD_GLOSSY_MULTI_GGX, "Multiscatter GGX"},
 };
-static const std::map<int, std::string> node_subsurface_method_item_conversion = {
+static const std::map<int, std::string> node_principled_subsurface_method_conversion = {
     {SHD_SUBSURFACE_BURLEY, "burley"},
     {SHD_SUBSURFACE_RANDOM_WALK, "random_walk"},
 };
@@ -669,10 +669,10 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       usd_handle_shader_enum(pxr::TfToken("Dimensions"), node_noise_dimensions_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_MATH: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_math_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Type"), node_math_type_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_VECTOR_MATH: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_vector_math_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Type"), node_vector_math_type_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_MAPPING: {
       usd_handle_shader_enum(pxr::TfToken("Type"), node_mapping_type_conversion, shader, (int)node->custom1);
@@ -707,18 +707,21 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
     case SH_NODE_BSDF_GLOSSY: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_glossy_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_glossy_distribution_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BSDF_REFRACTION: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_refraction_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_refraction_distribution_conversion, shader, (int)node->custom1);
+    } break;
+    case SH_NODE_BSDF_TOON: {
+      usd_handle_shader_enum(pxr::TfToken("component"), node_toon_component_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_DISPLACEMENT: {
       usd_handle_shader_enum(pxr::TfToken("Space"), node_displacement_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BSDF_HAIR: {
-      usd_handle_shader_enum(pxr::TfToken("component"), node_hair_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("component"), node_hair_component_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BSDF_HAIR_PRINCIPLED: {
       usd_handle_shader_enum(pxr::TfToken("parametrization"), node_principled_hair_parametrization_conversion, shader, (int)node->custom1);
@@ -745,12 +748,12 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
     case SH_NODE_BSDF_ANISOTROPIC: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_anisotropic_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_anisotropic_distribution_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BSDF_GLASS: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_glass_item_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_glass_distribution_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BUMP: {
       shader.CreateInput(pxr::TfToken("Invert"), pxr::SdfValueTypeNames->Bool)
@@ -762,8 +765,8 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
 
       int distribution = ((node->custom1) & 6);
 
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_principled_distribution_item_conversion, shader, (int)node->custom1);
-      usd_handle_shader_enum(pxr::TfToken("Subsurface_Method"), node_subsurface_method_item_conversion, shader, (int)node->custom2);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_principled_distribution_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Subsurface_Method"), node_principled_subsurface_method_conversion, shader, (int)node->custom2);
 
       // Removed in 2.82+?
       bool sss_diffuse_blend_get = (((node->custom1) & 8) != 0);
