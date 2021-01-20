@@ -126,23 +126,27 @@ static const int HD_CYCLES_CURVE_EXPORT_RES = 256;
  * API. So we have to store these for now.
  * Update: /source/blender/makesrna/intern/rna_nodetree.c
  * this looks suspiciously like we could use this to avoid these maps
- * 
+ *
  */
 
 // This helper wraps the conversion maps and in case of future features, or missing map entries
 // we encode the index. HdCycles can ingest enums as strings or integers. The trouble with ints
 // is that the order of enums is different from Blender to Cycles. Aguably, adding this ingeger
-// fallback will 'hide' missing future features, and 'may' work. However this code should be 
+// fallback will 'hide' missing future features, and 'may' work. However this code should be
 // considered 'live' and require tweaking with each new version until we can share this conversion
-// somehow. (Perhaps as mentioned above with rna_nodetree.c) 
-bool usd_handle_shader_enum(pxr::TfToken a_token, const std::map<int, std::string>& a_conversion_table, pxr::UsdShadeShader& a_shader, int a_value) {
-  if(a_conversion_table.count(a_value)) {
-    a_shader.CreateInput(pxr::TfToken(a_token), pxr::SdfValueTypeNames->String)
-            .Set(a_conversion_table.at(a_value));
+// somehow. (Perhaps as mentioned above with rna_nodetree.c)
+bool usd_handle_shader_enum(pxr::TfToken a_token,
+                            const std::map<int, std::string> &a_conversion_table,
+                            pxr::UsdShadeShader &a_shader,
+                            int a_value)
+{
+  std::map<int, std::string>::const_iterator it = a_conversion_table.find(a_value);
+  if (it != a_conversion_table.end()) {
+    a_shader.CreateInput(pxr::TfToken(a_token), pxr::SdfValueTypeNames->String).Set(it->second);
     return true;
-  } else {
-    a_shader.CreateInput(pxr::TfToken(a_token), pxr::SdfValueTypeNames->Int)
-          .Set(a_value);
+  }
+  else {
+    a_shader.CreateInput(pxr::TfToken(a_token), pxr::SdfValueTypeNames->Int).Set(a_value);
   }
   return false;
 }
@@ -195,8 +199,8 @@ static const std::map<int, std::string> node_wave_profile_conversion = {
     {SHD_WAVE_PROFILE_TRI, "tri"},
 };
 static const std::map<int, std::string> node_point_density_space_conversion = {
-    {SHD_POINTDENSITY_SPACE_OBJECT , "object"},
-    {SHD_POINTDENSITY_SPACE_WORLD , "world"},
+    {SHD_POINTDENSITY_SPACE_OBJECT, "object"},
+    {SHD_POINTDENSITY_SPACE_WORLD, "world"},
 };
 static const std::map<int, std::string> node_point_density_interpolation_conversion = {
     {SHD_INTERP_CLOSEST, "closest"},
@@ -233,8 +237,8 @@ static const std::map<int, std::string> node_mix_rgb_type_conversion = {
 };
 static const std::map<int, std::string> node_displacement_conversion = {
     {SHD_SPACE_TANGENT, "tangent"},
-    {SHD_SPACE_OBJECT , "object"},
-    {SHD_SPACE_WORLD , "world"},
+    {SHD_SPACE_OBJECT, "object"},
+    {SHD_SPACE_WORLD, "world"},
     {SHD_SPACE_BLENDER_OBJECT, "blender_object"},
     {SHD_SPACE_BLENDER_WORLD, "blender_world"},
 };
@@ -246,8 +250,8 @@ static const std::map<int, std::string> node_sss_falloff_conversion = {
 };
 static const std::map<int, std::string> node_principled_hair_parametrization_conversion = {
     {SHD_PRINCIPLED_HAIR_REFLECTANCE, "Direct coloring"},
-    {SHD_PRINCIPLED_HAIR_PIGMENT_CONCENTRATION , "Melanin concentration"},
-    {SHD_PRINCIPLED_HAIR_DIRECT_ABSORPTION , "Absorption coefficient"},
+    {SHD_PRINCIPLED_HAIR_PIGMENT_CONCENTRATION, "Melanin concentration"},
+    {SHD_PRINCIPLED_HAIR_DIRECT_ABSORPTION, "Absorption coefficient"},
 };
 static const std::map<int, std::string> node_clamp_type_conversion = {
     {NODE_CLAMP_MINMAX, "minmax"},
@@ -399,8 +403,8 @@ static const std::map<int, std::string> node_sky_tex_type_conversion = {
 
 // END TODO
 static const std::map<int, std::string> node_gradient_tex_type_conversion = {
-    {SHD_BLEND_LINEAR , "linear"},
-    {SHD_BLEND_LINEAR , "quadratic"},
+    {SHD_BLEND_LINEAR, "linear"},
+    {SHD_BLEND_LINEAR, "quadratic"},
     {SHD_BLEND_EASING, "easing"},
     {SHD_BLEND_DIAGONAL, "diagonal"},
     {SHD_BLEND_RADIAL, "radial"},
@@ -666,39 +670,54 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
 
   switch (node->type) {
     case SH_NODE_TEX_WHITE_NOISE: {
-      usd_handle_shader_enum(pxr::TfToken("Dimensions"), node_noise_dimensions_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Dimensions"),
+                             node_noise_dimensions_conversion,
+                             shader,
+                             (int)node->custom1);
     } break;
     case SH_NODE_MATH: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_math_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_math_type_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_VECTOR_MATH: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_vector_math_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_vector_math_type_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_MAPPING: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_mapping_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_mapping_type_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_MIX_RGB: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_mix_rgb_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_mix_rgb_type_conversion, shader, (int)node->custom1);
       shader.CreateInput(pxr::TfToken("Use_Clamp"), pxr::SdfValueTypeNames->Bool)
           .Set(node->custom1 & SHD_MIXRGB_CLAMP);
     } break;
     case SH_NODE_VECTOR_DISPLACEMENT: {
-      usd_handle_shader_enum(pxr::TfToken("Space"), node_displacement_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Space"), node_displacement_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_VECTOR_ROTATE: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_vector_rotate_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_vector_rotate_type_conversion, shader, (int)node->custom1);
       shader.CreateInput(pxr::TfToken("Invert"), pxr::SdfValueTypeNames->Bool)
           .Set((bool)node->custom2);
     } break;
     case SH_NODE_VECT_TRANSFORM: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_vector_transform_type_conversion, shader, (int)node->custom1);
-      usd_handle_shader_enum(pxr::TfToken("Space"), node_vector_transform_space_conversion, shader, (int)node->custom2);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_vector_transform_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Space"),
+                             node_vector_transform_space_conversion,
+                             shader,
+                             (int)node->custom2);
     } break;
     case SH_NODE_SUBSURFACE_SCATTERING: {
-      usd_handle_shader_enum(pxr::TfToken("Falloff"), node_sss_falloff_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Falloff"), node_sss_falloff_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_CLAMP: {
-      usd_handle_shader_enum(pxr::TfToken("Type"), node_clamp_type_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Type"), node_clamp_type_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_WIREFRAME: {
       shader.CreateInput(pxr::TfToken("Use_Pixel_Size"), pxr::SdfValueTypeNames->Bool)
@@ -707,24 +726,36 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
     case SH_NODE_BSDF_GLOSSY: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_glossy_distribution_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"),
+                             node_glossy_distribution_conversion,
+                             shader,
+                             (int)node->custom1);
     } break;
     case SH_NODE_BSDF_REFRACTION: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_refraction_distribution_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"),
+                             node_refraction_distribution_conversion,
+                             shader,
+                             (int)node->custom1);
     } break;
     case SH_NODE_BSDF_TOON: {
-      usd_handle_shader_enum(pxr::TfToken("component"), node_toon_component_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("component"), node_toon_component_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_DISPLACEMENT: {
-      usd_handle_shader_enum(pxr::TfToken("Space"), node_displacement_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("Space"), node_displacement_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BSDF_HAIR: {
-      usd_handle_shader_enum(pxr::TfToken("component"), node_hair_component_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(
+          pxr::TfToken("component"), node_hair_component_conversion, shader, (int)node->custom1);
     } break;
     case SH_NODE_BSDF_HAIR_PRINCIPLED: {
-      usd_handle_shader_enum(pxr::TfToken("parametrization"), node_principled_hair_parametrization_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("parametrization"),
+                             node_principled_hair_parametrization_conversion,
+                             shader,
+                             (int)node->custom1);
     } break;
     case SH_NODE_MAP_RANGE: {
       shader.CreateInput(pxr::TfToken("Use_Clamp"), pxr::SdfValueTypeNames->Bool)
@@ -748,12 +779,18 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
     case SH_NODE_BSDF_ANISOTROPIC: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_anisotropic_distribution_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"),
+                             node_anisotropic_distribution_conversion,
+                             shader,
+                             (int)node->custom1);
     } break;
     case SH_NODE_BSDF_GLASS: {
       // Cycles Standalone uses a different enum for distribution and subsurface, we encode strings
       // instead
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_glass_distribution_conversion, shader, (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"),
+                             node_glass_distribution_conversion,
+                             shader,
+                             (int)node->custom1);
     } break;
     case SH_NODE_BUMP: {
       shader.CreateInput(pxr::TfToken("Invert"), pxr::SdfValueTypeNames->Bool)
@@ -765,8 +802,14 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
 
       int distribution = ((node->custom1) & 6);
 
-      usd_handle_shader_enum(pxr::TfToken("Distribution"), node_principled_distribution_conversion, shader, (int)node->custom1);
-      usd_handle_shader_enum(pxr::TfToken("Subsurface_Method"), node_principled_subsurface_method_conversion, shader, (int)node->custom2);
+      usd_handle_shader_enum(pxr::TfToken("Distribution"),
+                             node_principled_distribution_conversion,
+                             shader,
+                             (int)node->custom1);
+      usd_handle_shader_enum(pxr::TfToken("Subsurface_Method"),
+                             node_principled_subsurface_method_conversion,
+                             shader,
+                             (int)node->custom2);
 
       // Removed in 2.82+?
       bool sss_diffuse_blend_get = (((node->custom1) & 8) != 0);
@@ -786,7 +829,8 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
         break;
       // TexMapping tex_mapping;
       // ColorMapping color_mapping;
-      usd_handle_shader_enum(pxr::TfToken("type"), node_sky_tex_type_conversion, shader, sky_storage->sky_model);
+      usd_handle_shader_enum(
+          pxr::TfToken("type"), node_sky_tex_type_conversion, shader, sky_storage->sky_model);
       shader.CreateInput(pxr::TfToken("sun_direction"), pxr::SdfValueTypeNames->Vector3f)
           .Set(pxr::GfVec3f(sky_storage->sun_direction[0],
                             sky_storage->sun_direction[1],
@@ -806,12 +850,24 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
         shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
             .Set(pxr::SdfAssetPath(imagePath));
 
-      usd_handle_shader_enum(cyclestokens::interpolation, node_image_tex_interpolation_conversion, shader, tex_original->interpolation);
-      usd_handle_shader_enum(cyclestokens::projection, node_image_tex_projection_conversion, shader, tex_original->projection);
-      usd_handle_shader_enum(cyclestokens::extension, node_image_tex_extension_conversion, shader, tex_original->extension);
+      usd_handle_shader_enum(cyclestokens::interpolation,
+                             node_image_tex_interpolation_conversion,
+                             shader,
+                             tex_original->interpolation);
+      usd_handle_shader_enum(cyclestokens::projection,
+                             node_image_tex_projection_conversion,
+                             shader,
+                             tex_original->projection);
+      usd_handle_shader_enum(cyclestokens::extension,
+                             node_image_tex_extension_conversion,
+                             shader,
+                             tex_original->extension);
 
-      Image *ima = (Image *)node->id;      
-      usd_handle_shader_enum(pxr::TfToken("alpha_type"), node_image_tex_alpha_type_conversion, shader, (int)ima->alpha_mode);
+      Image *ima = (Image *)node->id;
+      usd_handle_shader_enum(pxr::TfToken("alpha_type"),
+                             node_image_tex_alpha_type_conversion,
+                             shader,
+                             (int)ima->alpha_mode);
 
       // Colorspace RNA
       PointerRNA id_ptr;
@@ -861,11 +917,20 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       if (imagePath.size() > 0)
         shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
             .Set(pxr::SdfAssetPath(imagePath));
-      usd_handle_shader_enum(cyclestokens::projection, node_env_tex_projection_conversion, shader, env_storage->projection);
-      usd_handle_shader_enum(cyclestokens::interpolation, node_image_tex_interpolation_conversion, shader, env_storage->interpolation);
-      
-      Image *ima = (Image *)node->id;      
-      usd_handle_shader_enum(pxr::TfToken("alpha_type"), node_image_tex_alpha_type_conversion, shader, (int)ima->alpha_mode);
+      usd_handle_shader_enum(cyclestokens::projection,
+                             node_env_tex_projection_conversion,
+                             shader,
+                             env_storage->projection);
+      usd_handle_shader_enum(cyclestokens::interpolation,
+                             node_image_tex_interpolation_conversion,
+                             shader,
+                             env_storage->interpolation);
+
+      Image *ima = (Image *)node->id;
+      usd_handle_shader_enum(pxr::TfToken("alpha_type"),
+                             node_image_tex_alpha_type_conversion,
+                             shader,
+                             (int)ima->alpha_mode);
     } break;
 
     case SH_NODE_TEX_GRADIENT: {
@@ -873,7 +938,10 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       if (!grad_storage)
         break;
 
-      usd_handle_shader_enum(pxr::TfToken("type"), node_gradient_tex_type_conversion, shader, grad_storage->gradient_type);
+      usd_handle_shader_enum(pxr::TfToken("type"),
+                             node_gradient_tex_type_conversion,
+                             shader,
+                             grad_storage->gradient_type);
     } break;
 
     case SH_NODE_TEX_NOISE: {
@@ -882,7 +950,10 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
         break;
       // TexMapping tex_mapping;
       // ColorMapping color_mapping;
-      usd_handle_shader_enum(pxr::TfToken("dimensions"), node_noise_dimensions_conversion, shader, noise_storage->dimensions);
+      usd_handle_shader_enum(pxr::TfToken("dimensions"),
+                             node_noise_dimensions_conversion,
+                             shader,
+                             noise_storage->dimensions);
     } break;
 
     case SH_NODE_TEX_VORONOI: {
@@ -891,9 +962,18 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
         break;
       // TexMapping tex_mapping;
       // ColorMapping color_mapping;
-      usd_handle_shader_enum(pxr::TfToken("dimensions"), node_noise_dimensions_conversion, shader, voronoi_storage->dimensions);
-      usd_handle_shader_enum(pxr::TfToken("feature"), node_voronoi_feature_conversion, shader, voronoi_storage->feature);
-      usd_handle_shader_enum(pxr::TfToken("metric"), node_voronoi_distance_conversion, shader, voronoi_storage->distance);
+      usd_handle_shader_enum(pxr::TfToken("dimensions"),
+                             node_noise_dimensions_conversion,
+                             shader,
+                             voronoi_storage->dimensions);
+      usd_handle_shader_enum(pxr::TfToken("feature"),
+                             node_voronoi_feature_conversion,
+                             shader,
+                             voronoi_storage->feature);
+      usd_handle_shader_enum(pxr::TfToken("metric"),
+                             node_voronoi_distance_conversion,
+                             shader,
+                             voronoi_storage->distance);
     } break;
 
     case SH_NODE_TEX_MUSGRAVE: {
@@ -901,8 +981,14 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       if (!musgrave_storage)
         break;
 
-      usd_handle_shader_enum(pxr::TfToken("type"), node_musgrave_type_conversion, shader, musgrave_storage->musgrave_type);
-      usd_handle_shader_enum(pxr::TfToken("dimensions"), node_noise_dimensions_conversion, shader, musgrave_storage->dimensions);
+      usd_handle_shader_enum(pxr::TfToken("type"),
+                             node_musgrave_type_conversion,
+                             shader,
+                             musgrave_storage->musgrave_type);
+      usd_handle_shader_enum(pxr::TfToken("dimensions"),
+                             node_noise_dimensions_conversion,
+                             shader,
+                             musgrave_storage->dimensions);
     } break;
 
     case SH_NODE_TEX_WAVE: {
@@ -910,11 +996,21 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       if (!wave_storage)
         break;
 
-      usd_handle_shader_enum(pxr::TfToken("type"), node_wave_type_conversion, shader, wave_storage->wave_type);
-      usd_handle_shader_enum(pxr::TfToken("profile"), node_wave_profile_conversion, shader, wave_storage->wave_profile);
-      usd_handle_shader_enum(pxr::TfToken("rings_direction"), node_wave_rings_direction_conversion, shader, wave_storage->rings_direction);
-      usd_handle_shader_enum(pxr::TfToken("bands_direction"), node_wave_bands_direction_conversion, shader, wave_storage->bands_direction);
-          
+      usd_handle_shader_enum(
+          pxr::TfToken("type"), node_wave_type_conversion, shader, wave_storage->wave_type);
+      usd_handle_shader_enum(pxr::TfToken("profile"),
+                             node_wave_profile_conversion,
+                             shader,
+                             wave_storage->wave_profile);
+      usd_handle_shader_enum(pxr::TfToken("rings_direction"),
+                             node_wave_rings_direction_conversion,
+                             shader,
+                             wave_storage->rings_direction);
+      usd_handle_shader_enum(pxr::TfToken("bands_direction"),
+                             node_wave_bands_direction_conversion,
+                             shader,
+                             wave_storage->bands_direction);
+
     } break;
 
     case SH_NODE_TEX_POINTDENSITY: {
@@ -924,8 +1020,14 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
 
       // TODO: Incomplete...
 
-      usd_handle_shader_enum(pxr::TfToken("space"), node_point_density_space_conversion, shader, (int)pd_storage->space);
-      usd_handle_shader_enum(pxr::TfToken("interpolation"), node_point_density_interpolation_conversion, shader, (int)pd_storage->interpolation);
+      usd_handle_shader_enum(pxr::TfToken("space"),
+                             node_point_density_space_conversion,
+                             shader,
+                             (int)pd_storage->space);
+      usd_handle_shader_enum(pxr::TfToken("interpolation"),
+                             node_point_density_interpolation_conversion,
+                             shader,
+                             (int)pd_storage->interpolation);
     } break;
 
     case SH_NODE_TEX_MAGIC: {
@@ -1073,8 +1175,12 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       NodeShaderTangent *tangent_node_str = (NodeShaderTangent *)node->storage;
       if (!tangent_node_str)
         break;
-      usd_handle_shader_enum(pxr::TfToken("direction_type"), node_tangent_direction_type_conversion, shader, tangent_node_str->direction_type);
-      usd_handle_shader_enum(pxr::TfToken("axis"), node_tangent_axis_conversion, shader, tangent_node_str->axis);
+      usd_handle_shader_enum(pxr::TfToken("direction_type"),
+                             node_tangent_direction_type_conversion,
+                             shader,
+                             tangent_node_str->direction_type);
+      usd_handle_shader_enum(
+          pxr::TfToken("axis"), node_tangent_axis_conversion, shader, tangent_node_str->axis);
       shader.CreateInput(pxr::TfToken("Attribute"), pxr::SdfValueTypeNames->String)
           .Set(tangent_node_str->uv_map);
     } break;
@@ -1083,8 +1189,9 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       NodeShaderNormalMap *normal_node_str = (NodeShaderNormalMap *)node->storage;
       if (!normal_node_str)
         break;
-      usd_handle_shader_enum(pxr::TfToken("Space"), node_normal_map_space_conversion, shader, normal_node_str->space);
-      
+      usd_handle_shader_enum(
+          pxr::TfToken("Space"), node_normal_map_space_conversion, shader, normal_node_str->space);
+
       // We need to make valid here because actual uv primvar has been
       shader.CreateInput(pxr::TfToken("Attribute"), pxr::SdfValueTypeNames->String)
           .Set(pxr::TfMakeValidIdentifier(normal_node_str->uv_map));
