@@ -763,7 +763,7 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       int distribution = ((node->custom1) & 6);
 
       usd_handle_shader_enum(pxr::TfToken("Distribution"), node_principled_distribution_item_conversion, shader, (int)node->custom1);
-      usd_handle_shader_enum(pxr::TfToken("Subsurface_Method"), node_tangent_axis_conversion, shader, (int)node->custom2);
+      usd_handle_shader_enum(pxr::TfToken("Subsurface_Method"), node_subsurface_method_item_conversion, shader, (int)node->custom2);
 
       // Removed in 2.82+?
       bool sss_diffuse_blend_get = (((node->custom1) & 8) != 0);
