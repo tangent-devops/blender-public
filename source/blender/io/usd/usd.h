@@ -65,6 +65,9 @@ struct USDExportParams {
   bool export_normals;
   bool export_transforms;
   bool export_materials;
+  bool export_animated_textures;
+  double anim_tex_start;
+  double anim_tex_end;
   bool export_meshes;
   bool export_lights;
   bool export_cameras;

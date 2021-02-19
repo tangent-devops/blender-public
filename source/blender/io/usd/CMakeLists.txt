@@ -118,3 +118,5 @@ else()
 endif()
 
 target_link_libraries(bf_usd INTERFACE ${TBB_LIBRARIES})
+
+add_dependencies(bf_usd bf_rna)

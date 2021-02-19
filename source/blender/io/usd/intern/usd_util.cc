@@ -398,7 +398,7 @@ void ntree_shader_groups_flatten(bNodeTree *localtree)
 /* ===== USD/Blender Material Interchange ===== */
 
 /* Gets a NodeTexImage's filepath */
-std::string get_node_tex_image_filepath(bNode *node)
+std::string get_node_tex_image_filepath(bNode *node, const int frame_num)
 {
   NodeTexImage *tex_original = (NodeTexImage *)node->storage;
 
@@ -423,6 +423,13 @@ std::string get_node_tex_image_filepath(bNode *node)
 
     BLI_path_sequence_decode(filepath, head, tail, &numlen);
     sprintf(filepath, "%s%s%s", head, "<UDIM>", tail);
+  }
+  else if (ima->source == IMA_SRC_SEQUENCE && frame_num != INT_MIN) {
+    char head[FILE_MAX], tail[FILE_MAX];
+    unsigned short numlen;
+
+    BLI_path_sequence_decode(filepath, head, tail, &numlen);
+    sprintf(filepath, "%s%03d%s", head, frame_num, tail);
   }
 
   return std::string(filepath);

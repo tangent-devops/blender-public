@@ -58,7 +58,7 @@ void ntree_shader_groups_expand_inputs(bNodeTree *localtree);
 
 void ntree_shader_groups_flatten(bNodeTree *localtree);
 
-std::string get_node_tex_image_filepath(bNode *node);
+std::string get_node_tex_image_filepath(bNode *node, const int frame_num=INT_MIN);
 
 }  // Namespace USD
 

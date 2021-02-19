@@ -44,15 +44,27 @@ namespace USD {
 
 void create_usd_preview_surface_material(USDExporterContext const &usd_export_context_,
                                          Material *material,
-                                         pxr::UsdShadeMaterial &usd_material);
+                                         pxr::UsdShadeMaterial &usd_material,
+                                         const bool export_animated_textures,
+                                         const double anim_tex_start,
+                                         const double anim_tex_end,
+                                         const double current_frame);
 void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
                                 bNodeTree *ntree,
                                 pxr::UsdShadeMaterial &usd_material,
-                                bool a_asOvers);
+                                const bool a_asOvers,
+                                const bool export_animated_textures,
+                                const double anim_tex_start,
+                                const double anim_tex_end,
+                                const double current_frame);
 void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
                                 Material *material,
                                 pxr::UsdShadeMaterial &usd_material,
-                                bool a_asOvers);
+                                const bool a_asOvers,
+                                const bool export_animated_textures,
+                                const double anim_tex_start,
+                                const double anim_tex_end,
+                                const double current_frame);
 void create_usd_viewport_material(USDExporterContext const &usd_export_context_,
                                   Material *material,
                                   pxr::UsdShadeMaterial &usd_material);
