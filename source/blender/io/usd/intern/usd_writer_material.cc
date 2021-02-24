@@ -112,6 +112,22 @@ static const pxr::TfToken attribute("attribute", pxr::TfToken::Immortal);
 static const pxr::TfToken bsdf("bsdf", pxr::TfToken::Immortal);
 static const pxr::TfToken closure("closure", pxr::TfToken::Immortal);
 static const pxr::TfToken vector("vector", pxr::TfToken::Immortal);
+
+// tokens for animated textures
+static const pxr::TfToken num_frames("num_frames", pxr::TfToken::Immortal);
+static const pxr::TfToken start_frame("start_frame", pxr::TfToken::Immortal);
+static const pxr::TfToken frame_offset("frame_offset", pxr::TfToken::Immortal);
+static const pxr::TfToken cyclic("cyclic", pxr::TfToken::Immortal);
+
+// tokens for generated textures
+static const pxr::TfToken gen_tex_x("gen_tex_x", pxr::TfToken::Immortal);
+static const pxr::TfToken gen_tex_y("gen_tex_y", pxr::TfToken::Immortal);
+static const pxr::TfToken gen_tex_type("gen_tex_type", pxr::TfToken::Immortal);
+static const pxr::TfToken gen_tex_flag("gen_tex_flag", pxr::TfToken::Immortal);
+static const pxr::TfToken gen_tex_color("gen_tex_color", pxr::TfToken::Immortal);
+
+// token for movie texture
+static const pxr::TfToken deinterlace("deinterlace", pxr::TfToken::Immortal);
 }  // namespace cyclestokens
 
 namespace USD {
@@ -266,43 +282,87 @@ bNode *traverse_channel(bNodeSocket *input, short target_type)
 
 /* Call this to create the asset filename input for each texture node (e.g. an Image Texture, or
  * Environment Texture). It supports export of animated image sequences). */
-bool create_texture_filename_shader_input(pxr::UsdShadeShader &shader,
+bool create_texture_shader_input(pxr::UsdShadeShader &shader,
                                           bNode * const node,
                                           ImageUser * const iuser,
                                           const bool export_animated_textures,
                                           const double anim_tex_start,
                                           const double anim_tex_end,
                                           const double current_frame) {
-  std::string imagePath = get_node_tex_image_filepath(node);
 
-  if (imagePath.size() > 0) {
-    Image *ima = (Image *) node->id;
-    if (ELEM(ima->source, IMA_SRC_SEQUENCE)) {
-      if (!export_animated_textures) {
-        // Export the scene's current frame only.
-        bool is_in_range;
-        auto file_frame_num = BKE_image_user_frame_get(iuser, current_frame, &is_in_range);
-        std::string imagePath = get_node_tex_image_filepath(node, file_frame_num);
+  Image *ima = (Image *) node->id;
+  if (ELEM(ima->source, IMA_SRC_FILE, IMA_SRC_SEQUENCE, IMA_SRC_MOVIE, IMA_SRC_TILED)) {
+
+    std::string imagePath = get_node_tex_image_filepath(node);
+
+    if (imagePath.size() > 0) {
+      if (ELEM(ima->source, IMA_SRC_SEQUENCE, IMA_SRC_MOVIE)) {
+        // TO DO: If hdcycles is modified to calculate the frames based on exported parameters for
+        // Frames, Start Frame, Offset, Cyclic then there's no need to bake out the calculated
+        // frame's filename, per frame. Remove the per frame exporting code once that's done.
+        shader.CreateInput(cyclestokens::num_frames, pxr::SdfValueTypeNames->Int)
+          .Set(iuser->frames);
+        shader.CreateInput(cyclestokens::start_frame, pxr::SdfValueTypeNames->Int)
+          .Set(iuser->sfra);
+        shader.CreateInput(cyclestokens::frame_offset, pxr::SdfValueTypeNames->Int)
+          .Set(iuser->offset);
+        shader.CreateInput(cyclestokens::cyclic, pxr::SdfValueTypeNames->Bool)
+          .Set(static_cast<bool>(iuser->cycl));
+
+        if (ELEM(ima->source, IMA_SRC_MOVIE)) {
+          shader.CreateInput(cyclestokens::deinterlace, pxr::SdfValueTypeNames->Bool)
+            .Set( ((ima->flag & IMA_DEINTERLACE) != 0) );
+        }
+
+        if (!export_animated_textures or ELEM(ima->source, IMA_SRC_MOVIE)) {
+          // Export the scene's current frame only.
+          bool is_in_range;
+          auto file_frame_num = BKE_image_user_frame_get(iuser, current_frame, &is_in_range);
+          std::string imagePath = get_node_tex_image_filepath(node, file_frame_num);
+          shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
+            .Set(pxr::SdfAssetPath(imagePath));
+        } else {
+          auto shade_input = shader.CreateInput(cyclestokens::filename,
+                                                pxr::SdfValueTypeNames->Asset);
+          for (auto output_frame_num = anim_tex_start;
+               output_frame_num <= anim_tex_end;
+               output_frame_num++) {
+            bool is_in_range;
+            auto file_frame_num = BKE_image_user_frame_get(iuser, output_frame_num, &is_in_range);
+
+            std::string perFrameImagePath = get_node_tex_image_filepath(node, file_frame_num);
+            shade_input.Set(pxr::SdfAssetPath(perFrameImagePath), output_frame_num);
+          }
+        }
+      } else {
         shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
           .Set(pxr::SdfAssetPath(imagePath));
-      } else {
-        auto shade_input = shader.CreateInput(cyclestokens::filename,
-                                              pxr::SdfValueTypeNames->Asset);
-        for (auto output_frame_num = anim_tex_start;
-             output_frame_num <= anim_tex_end;
-             output_frame_num++) {
-          bool is_in_range;
-          auto file_frame_num = BKE_image_user_frame_get(iuser, output_frame_num, &is_in_range);
-
-          std::string perFrameImagePath = get_node_tex_image_filepath(node, file_frame_num);
-          shade_input.Set(pxr::SdfAssetPath(perFrameImagePath), output_frame_num);
-        }
       }
+      return true;
     } else {
       shader.CreateInput(cyclestokens::filename, pxr::SdfValueTypeNames->Asset)
-        .Set(pxr::SdfAssetPath(imagePath));
+        .Set(pxr::SdfAssetPath(""));
     }
+    return false;
+  }
+  else if (ELEM(ima->source, IMA_SRC_GENERATED)) {
+    shader.CreateInput(cyclestokens::gen_tex_x, pxr::SdfValueTypeNames->Int)
+      .Set(ima->gen_x);
+    shader.CreateInput(cyclestokens::gen_tex_y, pxr::SdfValueTypeNames->Int)
+      .Set(ima->gen_y);
+    shader.CreateInput(cyclestokens::gen_tex_type, pxr::SdfValueTypeNames->Int)
+      .Set(static_cast<int>(ima->gen_type));
+    shader.CreateInput(cyclestokens::gen_tex_flag, pxr::SdfValueTypeNames->Int)
+      .Set(static_cast<int>(ima->gen_flag));
+    shader.CreateInput(cyclestokens::gen_tex_color, pxr::SdfValueTypeNames->Float4)
+      .Set(pxr::GfVec4f(
+        ima->gen_color[0], ima->gen_color[1], ima->gen_color[2], ima->gen_color[3]));
+
     return true;
+  }
+  else if (ELEM(ima->source, IMA_SRC_VIEWER)) {
+    // Not currently supported.
+    return false;
   }
   return false;
 }
@@ -332,7 +392,7 @@ pxr::UsdShadeShader create_usd_preview_shader_node(USDExporterContext const &usd
 
       NodeTexImage *tex_original = (NodeTexImage *)node->storage;
 
-      create_texture_filename_shader_input(shader, node, &tex_original->iuser,
+      create_texture_shader_input(shader, node, &tex_original->iuser,
         export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
       break;
     }
@@ -565,17 +625,17 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       if (!tex_original)
         break;
 
-      if (create_texture_filename_shader_input(shader, node, &tex_original->iuser,
-        export_animated_textures, anim_tex_start, anim_tex_end, current_frame)) {
-        shader.CreateInput(cyclestokens::interpolation, pxr::SdfValueTypeNames->Int)
-          .Set(tex_original->interpolation);
-        shader.CreateInput(cyclestokens::projection, pxr::SdfValueTypeNames->Int)
-          .Set(tex_original->projection);
-        shader.CreateInput(cyclestokens::extension, pxr::SdfValueTypeNames->Int)
-          .Set(tex_original->extension);
-        shader.CreateInput(cyclestokens::color_space, pxr::SdfValueTypeNames->Int)
-          .Set(tex_original->color_space);
-      }
+      create_texture_shader_input(shader, node, &tex_original->iuser, export_animated_textures,
+        anim_tex_start, anim_tex_end, current_frame);
+
+      shader.CreateInput(cyclestokens::interpolation, pxr::SdfValueTypeNames->Int)
+        .Set(tex_original->interpolation);
+      shader.CreateInput(cyclestokens::projection, pxr::SdfValueTypeNames->Int)
+        .Set(tex_original->projection);
+      shader.CreateInput(cyclestokens::extension, pxr::SdfValueTypeNames->Int)
+        .Set(tex_original->extension);
+      shader.CreateInput(cyclestokens::color_space, pxr::SdfValueTypeNames->Int)
+        .Set(tex_original->color_space);
       break;
     }
 
@@ -608,13 +668,15 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
       // TexMapping tex_mapping;
       // ColorMapping color_mapping;
 
-      if (create_texture_filename_shader_input(shader, node, &env_storage->iuser,
-        export_animated_textures, anim_tex_start, anim_tex_end, current_frame)) {
-        shader.CreateInput(pxr::TfToken("projection"), pxr::SdfValueTypeNames->Int)
-          .Set(env_storage->projection);
-        shader.CreateInput(pxr::TfToken("interpolation"), pxr::SdfValueTypeNames->Int)
-          .Set(env_storage->interpolation);
-      }
+      create_texture_shader_input(shader, node, &env_storage->iuser, export_animated_textures,
+        anim_tex_start, anim_tex_end, current_frame);
+
+      shader.CreateInput(cyclestokens::projection, pxr::SdfValueTypeNames->Int)
+        .Set(env_storage->projection);
+      shader.CreateInput(cyclestokens::interpolation, pxr::SdfValueTypeNames->Int)
+        .Set(env_storage->interpolation);
+      shader.CreateInput(cyclestokens::color_space, pxr::SdfValueTypeNames->Int)
+        .Set(env_storage->color_space);
     } break;
 
     case SH_NODE_TEX_GRADIENT: {
