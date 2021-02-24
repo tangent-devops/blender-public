@@ -429,7 +429,7 @@ std::string get_node_tex_image_filepath(bNode *node, const int frame_num)
     unsigned short numlen;
 
     BLI_path_sequence_decode(filepath, head, tail, &numlen);
-    sprintf(filepath, "%s%03d%s", head, frame_num, tail);
+    BLI_path_sequence_encode(filepath, head, tail, numlen, frame_num);
   }
 
   return std::string(filepath);
