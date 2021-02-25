@@ -112,6 +112,7 @@ static const pxr::TfToken attribute("attribute", pxr::TfToken::Immortal);
 static const pxr::TfToken bsdf("bsdf", pxr::TfToken::Immortal);
 static const pxr::TfToken closure("closure", pxr::TfToken::Immortal);
 static const pxr::TfToken vector("vector", pxr::TfToken::Immortal);
+static const pxr::TfToken image_source("image_source", pxr::TfToken::Immortal);
 
 // tokens for animated textures
 static const pxr::TfToken num_frames("num_frames", pxr::TfToken::Immortal);
@@ -291,6 +292,10 @@ bool create_texture_shader_input(pxr::UsdShadeShader &shader,
                                           const double current_frame) {
 
   Image *ima = (Image *) node->id;
+
+  shader.CreateInput(cyclestokens::image_source, pxr::SdfValueTypeNames->Int).Set(
+    static_cast<int>(ima->source));
+
   if (ELEM(ima->source, IMA_SRC_FILE, IMA_SRC_SEQUENCE, IMA_SRC_MOVIE, IMA_SRC_TILED)) {
 
     std::string imagePath = get_node_tex_image_filepath(node);
