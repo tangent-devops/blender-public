@@ -30,8 +30,11 @@ extern "C" {
 
 #include "BLI_utildefines.h"
 
+#include "DNA_scene_types.h"
+#include "DEG_depsgraph_query.h"
 #include "DNA_modifier_types.h"
 }
+
 
 /* TfToken objects are not cheap to construct, so we do it once. */
 namespace usdtokens {
@@ -138,14 +141,21 @@ pxr::UsdShadeMaterial USDAbstractWriter::ensure_usd_material(Material *material)
                      pxr::UsdShadeMaterial::Define(usd_export_context_.stage, usd_path);
 
   // TODO(bskinner) maybe always export viewport material as variant...
+  const Scene *scene = DEG_get_evaluated_scene(this->usd_export_context_.depsgraph);
   if (material->use_nodes) {
-    create_usd_cycles_material(this->usd_export_context_.stage,
-                               material,
-                               usd_material,
-                               this->usd_export_context_.export_params.export_as_overs);
+    create_usd_cycles_material(this->usd_export_context_.stage, material, usd_material,
+                               this->usd_export_context_.export_params.export_as_overs,
+                               this->usd_export_context_.export_params.export_animated_textures,
+                               this->usd_export_context_.export_params.anim_tex_start,
+                               this->usd_export_context_.export_params.anim_tex_end,
+                               scene->r.cfra);
   }
   if (material->use_nodes && this->usd_export_context_.export_params.generate_preview_surface) {
-    create_usd_preview_surface_material(this->usd_export_context_, material, usd_material);
+    create_usd_preview_surface_material(this->usd_export_context_, material, usd_material,
+                               this->usd_export_context_.export_params.export_animated_textures,
+                               this->usd_export_context_.export_params.anim_tex_start,
+                               this->usd_export_context_.export_params.anim_tex_end,
+                               scene->r.cfra);
   }
   else {
     create_usd_viewport_material(this->usd_export_context_, material, usd_material);

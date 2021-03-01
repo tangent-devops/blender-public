@@ -165,6 +165,7 @@ static int wm_usd_export_exec(bContext *C, wmOperator *op)
   const bool export_normals = RNA_boolean_get(op->ptr, "export_normals");
   const bool export_transforms = RNA_boolean_get(op->ptr, "export_transforms");
   const bool export_materials = RNA_boolean_get(op->ptr, "export_materials");
+  const bool export_animated_textures = RNA_boolean_get(op->ptr, "export_animated_textures");
   const bool export_meshes = RNA_boolean_get(op->ptr, "export_meshes");
   const bool export_lights = RNA_boolean_get(op->ptr, "export_lights");
   const bool export_cameras = RNA_boolean_get(op->ptr, "export_cameras");
@@ -220,6 +221,9 @@ static int wm_usd_export_exec(bContext *C, wmOperator *op)
       export_normals,
       export_transforms,
       export_materials,
+      export_animated_textures,
+      RNA_int_get(op->ptr, "anim_tex_start"),
+      RNA_int_get(op->ptr, "anim_tex_end"),
       export_meshes,
       export_lights,
       export_cameras,
@@ -277,6 +281,9 @@ static void wm_usd_export_draw(bContext *C, wmOperator *op)
     RNA_int_set(ptr, "start", SFRA);
     RNA_int_set(ptr, "end", EFRA);
 
+    RNA_int_set(ptr, "anim_tex_start", SFRA);
+    RNA_int_set(ptr, "anim_tex_end", EFRA);
+
     RNA_boolean_set(ptr, "init_scene_frame_range", false);
   }
 
@@ -333,6 +340,13 @@ static void wm_usd_export_draw(bContext *C, wmOperator *op)
   uiItemR(box, ptr, "export_transforms", 0, NULL, ICON_NONE);
   uiItemR(box, ptr, "export_meshes", 0, NULL, ICON_NONE);
   uiItemR(box, ptr, "export_materials", 0, NULL, ICON_NONE);
+  if (RNA_boolean_get(ptr, "export_materials")) {
+    uiItemR(box, ptr, "export_animated_textures", 0, NULL, ICON_NONE);
+    if (RNA_boolean_get(ptr, "export_animated_textures")) {
+      uiItemR(box, ptr, "anim_tex_start", 0, NULL, ICON_NONE);
+      uiItemR(box, ptr, "anim_tex_end", 0, NULL, ICON_NONE);
+    }
+  }
   uiItemR(box, ptr, "export_lights", 0, NULL, ICON_NONE);
   uiItemR(box, ptr, "export_cameras", 0, NULL, ICON_NONE);
   uiItemR(box, ptr, "export_curves", 0, NULL, ICON_NONE);
@@ -462,6 +476,35 @@ void WM_OT_usd_export(struct wmOperatorType *ot)
                   "Materials",
                   "When checked, the viewport settings of materials are exported as USD preview "
                   "materials, and material assignments are exported as geometry subsets");
+  RNA_def_boolean(ot->srna,
+                  "export_animated_textures",
+                  true,
+                  "Export Animated Textures",
+                  "When checked, Image/Environment Textures that are set to an animated Image "
+                  "Sequence are exported, for each frame between the Start and End Frame. If not "
+                  "enabled, the texture for the active scene's current frame is exported as a "
+                  "static texture path");
+  RNA_def_int(ot->srna,
+              "anim_tex_start",
+              INT_MIN,
+              INT_MIN,
+              INT_MAX,
+              "Start Frame",
+              "Start frame of the animated texture export, use the default value to "
+              "take the start frame of the current scene",
+              INT_MIN,
+              INT_MAX);
+  RNA_def_int(ot->srna,
+              "anim_tex_end",
+              INT_MIN,
+              INT_MIN,
+              INT_MAX,
+              "End Frame",
+              "End frame of the animated texture export, use the default value to "
+              "take the end frame of the current scene",
+              INT_MIN,
+              INT_MAX);
+
   RNA_def_boolean(
       ot->srna, "export_meshes", true, "Meshes", "When checked, all meshes will be exported");
   RNA_def_boolean(
