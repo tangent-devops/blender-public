@@ -1048,6 +1048,19 @@ pxr::UsdShadeShader create_cycles_shader_node(pxr::UsdStageRefPtr a_stage,
                              node_image_tex_alpha_type_conversion,
                              shader,
                              (int)ima->alpha_mode);
+
+      // Colorspace RNA
+      PointerRNA id_ptr;
+      RNA_id_pointer_create(node->id, &id_ptr);
+      BL::Image b_image(id_ptr);
+      PointerRNA colorspace_ptr = b_image.colorspace_settings().ptr;
+      PropertyRNA *prop = RNA_struct_find_property(&colorspace_ptr, "name");
+      const char *identifier = "";
+      int value = RNA_property_enum_get(&colorspace_ptr, prop);
+      RNA_property_enum_identifier(NULL, &colorspace_ptr, prop, value, &identifier);
+
+      shader.CreateInput(cyclestokens::colorspace, pxr::SdfValueTypeNames->String)
+        .Set(std::string(identifier));
     } break;
 
     case SH_NODE_TEX_GRADIENT: {
