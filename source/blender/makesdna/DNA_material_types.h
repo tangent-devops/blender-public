@@ -303,6 +303,26 @@ typedef struct Material {
 /* pr_flag */
 #define MA_PREVIEW_WORLD (1 << 0)
 
+/* displacement method */
+enum {
+  MA_DISPLACEMENT_BUMP = 0,
+  MA_DISPLACEMENT_TRUE = 1,
+  MA_DISPLACEMENT_BOTH = 2,
+};
+
+/* volume sampling method */
+enum {
+  MA_VOLUME_SAMPLING_DISTANCE = 0,
+  MA_VOLUME_SAMPLING_EQUIANGULAR = 1,
+  MA_VOLUME_SAMPLING_MULTIPLE_IMPORTANCE = 2,
+};
+
+/* volume interpolation method */
+enum {
+  MA_VOLUME_INTERPOLATION_LINEAR = 0,
+  MA_VOLUME_INTERPOLATION_CUBIC = 1,
+};
+
 /* blend_method */
 enum {
   MA_BM_SOLID = 0,

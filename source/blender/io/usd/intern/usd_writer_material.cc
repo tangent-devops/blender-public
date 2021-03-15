@@ -117,6 +117,24 @@ static const pxr::TfToken closure("closure", pxr::TfToken::Immortal);
 static const pxr::TfToken vector("vector", pxr::TfToken::Immortal);
 static const pxr::TfToken image_source("image_source", pxr::TfToken::Immortal);
 
+// tokens for material settings
+namespace material {
+  static const pxr::TfToken pass_id("cycles:material:pass_id", pxr::TfToken::Immortal);
+  static const pxr::TfToken use_mis("cycles:material:use_mis", pxr::TfToken::Immortal);
+  static const pxr::TfToken use_transparent_shadow(
+    "cycles:material:use_transparent_shadow", pxr::TfToken::Immortal);
+  static const pxr::TfToken heterogeneous_volume(
+    "cycles:material:heterogeneous_volume", pxr::TfToken::Immortal);
+  static const pxr::TfToken volume_sampling_method(
+    "cycles:material:volume_sampling_method", pxr::TfToken::Immortal);
+  static const pxr::TfToken volume_interpolation_method(
+    "cycles:material:volume_interpolation_method", pxr::TfToken::Immortal);
+  static const pxr::TfToken volume_step_rate(
+    "cycles:material:volume_step_rate", pxr::TfToken::Immortal);
+  static const pxr::TfToken displacement_method(
+    "cycles:material:displacement_method", pxr::TfToken::Immortal);
+}
+
 // tokens for animated textures
 static const pxr::TfToken num_frames("num_frames", pxr::TfToken::Immortal);
 static const pxr::TfToken start_frame("start_frame", pxr::TfToken::Immortal);
@@ -167,6 +185,40 @@ bool usd_handle_shader_enum(pxr::TfToken a_token,
   }
   return false;
 }
+
+bool usd_handle_material_enum(pxr::TfToken a_token,
+                            const std::map<int, pxr::TfToken> &a_conversion_table,
+                            pxr::UsdShadeMaterial &a_material,
+                            int a_value)
+{
+  std::map<int, pxr::TfToken>::const_iterator it = a_conversion_table.find(a_value);
+  if (it != a_conversion_table.end()) {
+    a_material.GetPrim().CreateAttribute(a_token, pxr::SdfValueTypeNames->Token, false,
+      pxr::SdfVariabilityUniform).Set(it->second);
+    return true;
+  }
+  else {
+    a_material.CreateInput(pxr::TfToken(a_token), pxr::SdfValueTypeNames->Int).Set(a_value);
+  }
+  return false;
+}
+
+static const std::map<int, pxr::TfToken> material_displacement_method_conversion = {
+    {MA_DISPLACEMENT_BUMP, pxr::TfToken("displacement_bump")},
+    {MA_DISPLACEMENT_TRUE, pxr::TfToken("displacement_true")},
+    {MA_DISPLACEMENT_BOTH, pxr::TfToken("displacement_both")},
+};
+
+static const std::map<int, pxr::TfToken> material_volume_sampling_method_conversion = {
+    {MA_VOLUME_SAMPLING_DISTANCE, pxr::TfToken("volume_sampling_distance")},
+    {MA_VOLUME_SAMPLING_EQUIANGULAR, pxr::TfToken("volume_sampling_equiangular")},
+    {MA_VOLUME_SAMPLING_MULTIPLE_IMPORTANCE, pxr::TfToken("volume_sampling_multiple_importance")},
+};
+
+static const std::map<int, pxr::TfToken> material_volume_interpolation_method_conversion = {
+    {MA_VOLUME_INTERPOLATION_LINEAR, pxr::TfToken("volume_interpolation_linear")},
+    {MA_VOLUME_INTERPOLATION_CUBIC, pxr::TfToken("volume_interpolation_cubic")},
+};
 
 static const std::map<int, std::string> node_noise_dimensions_conversion = {
     {1, "1D"},
@@ -1754,6 +1806,44 @@ void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
                                 const double anim_tex_end,
                                 const double current_frame)
 {
+  PointerRNA id_ptr;
+  RNA_id_pointer_create(&material->id, &id_ptr);
+  BL::Material b_mat(id_ptr);
+
+  PointerRNA cmat = RNA_pointer_get(&b_mat.ptr, "cycles");
+  int pass_id = b_mat.pass_index();
+  bool use_mis = RNA_boolean_get(&cmat, "sample_as_light");
+  bool use_transparent_shadow = RNA_boolean_get(&cmat, "use_transparent_shadow");
+  bool heterogeneous_volume = !RNA_boolean_get(&cmat, "homogeneous_volume");
+  int volume_sampling_method = RNA_enum_get(&cmat,"volume_sampling");
+  int volume_interpolation_method = RNA_enum_get(&cmat,"volume_interpolation");
+  float volume_step_rate = RNA_float_get(&cmat, "volume_step_rate");
+  int displacement_method = RNA_enum_get(&cmat,"displacement_method");
+
+  usd_material.GetPrim().CreateAttribute(cyclestokens::material::pass_id,
+    pxr::SdfValueTypeNames->Int, false, pxr::SdfVariabilityUniform).Set(pass_id);
+
+  usd_material.GetPrim().CreateAttribute(cyclestokens::material::use_mis,
+    pxr::SdfValueTypeNames->Bool, false, pxr::SdfVariabilityVarying).Set(use_mis);
+
+  usd_material.GetPrim().CreateAttribute(cyclestokens::material::use_transparent_shadow,
+    pxr::SdfValueTypeNames->Bool, false, pxr::SdfVariabilityVarying).Set(use_transparent_shadow);
+
+  usd_material.GetPrim().CreateAttribute(cyclestokens::material::heterogeneous_volume,
+    pxr::SdfValueTypeNames->Bool, false, pxr::SdfVariabilityUniform).Set(heterogeneous_volume);
+
+  usd_handle_material_enum(cyclestokens::material::volume_sampling_method,
+    material_volume_sampling_method_conversion, usd_material, volume_sampling_method);
+
+  usd_handle_material_enum(cyclestokens::material::volume_interpolation_method,
+    material_volume_interpolation_method_conversion, usd_material, volume_interpolation_method); 
+
+  usd_material.GetPrim().CreateAttribute(cyclestokens::material::volume_step_rate,
+    pxr::SdfValueTypeNames->Float, false, pxr::SdfVariabilityUniform).Set(volume_step_rate);
+
+  usd_handle_material_enum(cyclestokens::material::displacement_method,
+    material_displacement_method_conversion, usd_material, displacement_method);
+
   create_usd_cycles_material(a_stage, material->nodetree, usd_material, a_asOvers,
     export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
 }
