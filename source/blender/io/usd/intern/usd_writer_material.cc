@@ -187,9 +187,9 @@ bool usd_handle_shader_enum(pxr::TfToken a_token,
 }
 
 bool usd_handle_material_enum(pxr::TfToken a_token,
-                            const std::map<int, pxr::TfToken> &a_conversion_table,
-                            pxr::UsdShadeMaterial &a_material,
-                            int a_value)
+                              const std::map<int, pxr::TfToken> &a_conversion_table,
+                              pxr::UsdShadeMaterial &a_material,
+                              int a_value)
 {
   std::map<int, pxr::TfToken>::const_iterator it = a_conversion_table.find(a_value);
   if (it != a_conversion_table.end()) {
@@ -204,20 +204,20 @@ bool usd_handle_material_enum(pxr::TfToken a_token,
 }
 
 static const std::map<int, pxr::TfToken> material_displacement_method_conversion = {
-    {MA_DISPLACEMENT_BUMP, pxr::TfToken("displacement_bump")},
-    {MA_DISPLACEMENT_TRUE, pxr::TfToken("displacement_true")},
-    {MA_DISPLACEMENT_BOTH, pxr::TfToken("displacement_both")},
+  {MA_DISPLACEMENT_BUMP, pxr::TfToken("displacement_bump")},
+  {MA_DISPLACEMENT_TRUE, pxr::TfToken("displacement_true")},
+  {MA_DISPLACEMENT_BOTH, pxr::TfToken("displacement_both")},
 };
 
 static const std::map<int, pxr::TfToken> material_volume_sampling_method_conversion = {
-    {MA_VOLUME_SAMPLING_DISTANCE, pxr::TfToken("volume_sampling_distance")},
-    {MA_VOLUME_SAMPLING_EQUIANGULAR, pxr::TfToken("volume_sampling_equiangular")},
-    {MA_VOLUME_SAMPLING_MULTIPLE_IMPORTANCE, pxr::TfToken("volume_sampling_multiple_importance")},
+  {MA_VOLUME_SAMPLING_DISTANCE, pxr::TfToken("volume_sampling_distance")},
+  {MA_VOLUME_SAMPLING_EQUIANGULAR, pxr::TfToken("volume_sampling_equiangular")},
+  {MA_VOLUME_SAMPLING_MULTIPLE_IMPORTANCE, pxr::TfToken("volume_sampling_multiple_importance")},
 };
 
 static const std::map<int, pxr::TfToken> material_volume_interpolation_method_conversion = {
-    {MA_VOLUME_INTERPOLATION_LINEAR, pxr::TfToken("volume_interpolation_linear")},
-    {MA_VOLUME_INTERPOLATION_CUBIC, pxr::TfToken("volume_interpolation_cubic")},
+  {MA_VOLUME_INTERPOLATION_LINEAR, pxr::TfToken("volume_interpolation_linear")},
+  {MA_VOLUME_INTERPOLATION_CUBIC, pxr::TfToken("volume_interpolation_cubic")},
 };
 
 static const std::map<int, std::string> node_noise_dimensions_conversion = {
@@ -1836,7 +1836,7 @@ void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
     material_volume_sampling_method_conversion, usd_material, volume_sampling_method);
 
   usd_handle_material_enum(cyclestokens::material::volume_interpolation_method,
-    material_volume_interpolation_method_conversion, usd_material, volume_interpolation_method); 
+    material_volume_interpolation_method_conversion, usd_material, volume_interpolation_method);
 
   usd_material.GetPrim().CreateAttribute(cyclestokens::material::volume_step_rate,
     pxr::SdfValueTypeNames->Float, false, pxr::SdfVariabilityUniform).Set(volume_step_rate);
