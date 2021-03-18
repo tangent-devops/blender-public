@@ -96,6 +96,7 @@ static void export_startjob(void *customdata, short *stop, short *do_update, flo
   data->do_update = do_update;
   data->progress = progress;
   data->was_canceled = false;
+  data->export_ok = true;
 
   G.is_rendering = true;
   WM_set_locked_interface(data->wm, true);
@@ -244,37 +245,46 @@ static void export_startjob(void *customdata, short *stop, short *do_update, flo
 
   USDHierarchyIterator iter(data->depsgraph, usd_stage, data->params);
 
-  if (data->params.export_animation) {
-    // Writing the animated frames is not 100% of the work, but it's our best guess.
-    float progress_per_frame = 1.0f / std::max(1.0f,
-                                               (float)(data->params.frame_end -
-                                                       data->params.frame_start + 1.0) /
-                                                   data->params.frame_step);
+  try {
+    if (data->params.export_animation) {
+      // Writing the animated frames is not 100% of the work, but it's our best guess.
+      float progress_per_frame = 1.0f / std::max(1.0f,
+                                                 (float) (data->params.frame_end -
+                                                          data->params.frame_start + 1.0) /
+                                                 data->params.frame_step);
 
-    for (float frame = data->params.frame_start; frame <= data->params.frame_end;
-         frame += data->params.frame_step) {
-      if (G.is_break || (stop != nullptr && *stop)) {
-        break;
+      for (float frame = data->params.frame_start; frame <= data->params.frame_end;
+           frame += data->params.frame_step) {
+        if (G.is_break || (stop != nullptr && *stop)) {
+          break;
+        }
+
+        // Update the scene for the next frame to render.
+        scene->r.cfra = static_cast<int>(frame);
+        scene->r.subframe = frame - scene->r.cfra;
+        BKE_scene_graph_update_for_newframe(data->depsgraph, data->bmain);
+
+        iter.set_export_frame(frame);
+        iter.iterate_and_write();
+
+        *progress += progress_per_frame;
+        *do_update = true;
       }
-
-      // Update the scene for the next frame to render.
-      scene->r.cfra = static_cast<int>(frame);
-      scene->r.subframe = frame - scene->r.cfra;
-      BKE_scene_graph_update_for_newframe(data->depsgraph, data->bmain);
-
-      iter.set_export_frame(frame);
+    } else {
+      // If we're not animating, a single iteration over all objects is enough.
       iter.iterate_and_write();
-
-      *progress += progress_per_frame;
-      *do_update = true;
     }
   }
-  else {
-    // If we're not animating, a single iteration over all objects is enough.
-    iter.iterate_and_write();
+  catch(...) {
+    WM_reportf(RPT_ERROR, "USD Export: An error was encountered. Export aborted.");
+    data->export_ok = false;
   }
 
   iter.release_writers();
+
+  if (!data->export_ok) {
+    return;
+  }
 
   // Set Stage Default Prim Path
   if (strlen(data->params.default_prim_path) > 0) {

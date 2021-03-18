@@ -74,6 +74,18 @@ extern "C" {
 
 //#include <pxr/usdImaging/usdImaging/tokens.h> NOT INCLUDED IN BLENDER BUILD
 
+class MaterialExportException {
+private:
+  std::string m_error_str;
+public:
+  MaterialExportException(std::string error_str) : m_error_str(error_str) {
+  }
+
+  std::string get_error_str()  const {
+    return m_error_str;
+  }
+};
+
 /* TfToken objects are not cheap to construct, so we do it once. */
 namespace usdtokens {
 // Materials
@@ -642,6 +654,12 @@ bool create_texture_shader_input(pxr::UsdShadeShader &shader,
                                           const double current_frame) {
 
   Image *ima = (Image *) node->id;
+
+  if ( !ima ) {
+    throw MaterialExportException(
+      std::string("Error: Image texture has not been specified for texture node ") +
+      std::string(node->name));
+  }
 
   shader.CreateInput(cyclestokens::image_source, pxr::SdfValueTypeNames->Int).Set(
     static_cast<int>(ima->source));
@@ -1662,20 +1680,27 @@ void store_cycles_nodes(pxr::UsdStageRefPtr a_stage,
                         const double anim_tex_end,
                         const double current_frame)
 {
-  for (bNode *node = (bNode *)ntree->nodes.first; node; node = node->next) {
+  try {
+    for (bNode *node = (bNode *) ntree->nodes.first; node; node = node->next) {
 
-    // Blacklist certain nodes
-    if (node->flag & NODE_MUTED)
-      continue;
+      // Blacklist certain nodes
+      if (node->flag & NODE_MUTED)
+        continue;
 
-    if (node->type == SH_NODE_OUTPUT_MATERIAL) {
-      *material_out = node;
-      continue;
-    }
+      if (node->type == SH_NODE_OUTPUT_MATERIAL) {
+        *material_out = node;
+        continue;
+      }
 
-    pxr::UsdShadeShader node_shader = create_cycles_shader_node(
+      pxr::UsdShadeShader node_shader = create_cycles_shader_node(
         a_stage, shader_path, node, a_asOvers, export_animated_textures, anim_tex_start,
         anim_tex_end, current_frame);
+    }
+  }
+  catch (const MaterialExportException &exception) {
+    std::string error_str = std::string("USD Export: ") + exception.get_error_str();
+    WM_reportf(RPT_ERROR, error_str.c_str());
+    throw std::exception(error_str.c_str());
   }
 }
 
