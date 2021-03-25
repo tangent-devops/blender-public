@@ -1672,7 +1672,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
   catch (const MaterialExportException &exception) {
     std::string error_str = std::string("USD Export: ") + exception.get_error_str();
     WM_reportf(RPT_ERROR, error_str.c_str());
-    throw std::exception(error_str.c_str());
+    throw std::runtime_error(error_str.c_str());
   }
 }
 
@@ -1916,7 +1916,7 @@ void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
   catch (const MaterialExportException &exception) {
     std::string error_str = std::string("USD Export: ") + exception.get_error_str();
     WM_reportf(RPT_ERROR, error_str.c_str());
-    throw std::exception(error_str.c_str());
+    throw std::runtime_error(error_str.c_str());
   }
 }
 
