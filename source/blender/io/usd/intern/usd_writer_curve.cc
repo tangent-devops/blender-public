@@ -51,6 +51,30 @@ void USDCurveWriter::do_write(HierarchyContext &context)
 
   Curve *curve = static_cast<Curve *>(context.object->data);
 
+  float matrix_world[4][4];
+
+  if (usd_export_context_.export_params.export_transforms) {
+    // TODO(bjs): This is inefficient checking for every transform. should be moved elsewhere
+    if (usd_export_context_.export_params.convert_orientation) {
+      float mrot[3][3];
+      float mat[4][4];
+      mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
+                                USD_GLOBAL_UP_Z,
+                                usd_export_context_.export_params.forward_axis,
+                                usd_export_context_.export_params.up_axis,
+                                mrot);
+      transpose_m3(mrot);
+      copy_m4_m3(mat, mrot);
+      mul_m4_m4m4(matrix_world, mat, context.matrix_world);
+    }
+    else
+    {
+      copy_m4_m4(matrix_world, context.matrix_world);
+    }
+
+    BKE_curve_transform(curve, matrix_world, true, true);
+  }
+
   pxr::VtArray<pxr::GfVec3f> verts;
   pxr::VtArray<float> widths;
 
@@ -207,6 +231,11 @@ void USDCurveWriter::do_write(HierarchyContext &context)
       curve->id.properties) {
     auto prim = curves.GetPrim();
     write_id_properties(prim, curve->id, timecode);
+  }
+
+  if (usd_export_context_.export_params.export_transforms) {
+    invert_m4(matrix_world);
+    BKE_curve_transform(curve, matrix_world, true, true);
   }
 }
 

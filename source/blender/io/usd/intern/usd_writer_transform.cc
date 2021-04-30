@@ -66,14 +66,13 @@ void USDTransformWriter::do_write(HierarchyContext &context)
     }
   }
 
-  if (usd_export_context_.export_params.export_transforms) {
+  if (false && usd_export_context_.export_params.export_transforms) {
     float parent_relative_matrix[4][4];  // The object matrix relative to the parent.
 
     // TODO(bjs): This is inefficient checking for every transform. should be moved elsewhere
     if (context.export_parent == nullptr &&
         usd_export_context_.export_params.convert_orientation) {
       float matrix_world[4][4];
-      copy_m4_m4(matrix_world, context.matrix_world);
       float mrot[3][3];
       float mat[4][4];
       mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
