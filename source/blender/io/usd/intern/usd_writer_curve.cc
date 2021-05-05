@@ -54,7 +54,27 @@ void USDCurveWriter::do_write(HierarchyContext &context)
   float mat_transform[4][4];
 
   if (usd_export_context_.export_params.export_transforms &&
-      usd_export_context_.export_params.convert_orientation) {
+      usd_export_context_.export_params.apply_transforms) {
+    // TODO(bjs): This is inefficient checking for every transform. should be moved elsewhere
+    if (usd_export_context_.export_params.convert_orientation) {
+      float mrot[3][3];
+      float mat[4][4];
+      mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
+                                +USD_GLOBAL_UP_Z,
+                                +usd_export_context_.export_params.forward_axis,
+                                +usd_export_context_.export_params.up_axis,
+                                +mrot);
+      transpose_m3(mrot);
+      copy_m4_m3(mat, mrot);
+      mul_m4_m4m4(mat_transform, mat, context.matrix_world);
+    }
+    else {
+      copy_m4_m4(mat_transform, context.matrix_world);
+    }
+    BKE_curve_transform(curve, mat_transform, true, true);
+  }
+  else if (usd_export_context_.export_params.export_transforms &&
+           usd_export_context_.export_params.convert_orientation) {
     float mrot[3][3];
     mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
                               USD_GLOBAL_UP_Z,
@@ -224,7 +244,9 @@ void USDCurveWriter::do_write(HierarchyContext &context)
     write_id_properties(prim, curve->id, timecode);
   }
 
-  if (usd_export_context_.export_params.export_transforms) {
+  if (usd_export_context_.export_params.export_transforms &&
+      (usd_export_context_.export_params.apply_transforms ||
+       usd_export_context_.export_params.convert_orientation)) {
     invert_m4(mat_transform);
     BKE_curve_transform(curve, mat_transform, true, true);
   }

@@ -97,7 +97,8 @@ void USDTransformWriter::do_write(HierarchyContext &context)
     }
   }
 
-  if (usd_export_context_.export_params.export_transforms) {
+  if (usd_export_context_.export_params.export_transforms &&
+      !usd_export_context_.export_params.apply_transforms) {
     float parent_relative_matrix[4][4];
     // The object matrix relative to the parent.
     if (usd_export_context_.export_params.convert_orientation) {
