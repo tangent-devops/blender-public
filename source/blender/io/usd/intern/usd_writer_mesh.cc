@@ -526,7 +526,28 @@ void USDGenericMeshWriter::write_mesh(HierarchyContext &context, Mesh *mesh)
       usd_value_writer_.SetAttribute(
           attr_crease_sharpness, pxr::VtValue(usd_mesh_data.crease_sharpnesses), timecode);
     }
+
+    // compute bounds
+    // bugfix: moved from below to only compute bounds
+    // when verts exist, which may not be the case if
+    // exporting shading.
+    pxr::UsdGeomBoundable boundable(usd_mesh);
+    pxr::GfRange3d range = boundable.ComputeLocalBound(
+        timecode,
+        pxr::UsdGeomTokens->default_,
+        pxr::UsdGeomTokens->render,
+        pxr::UsdGeomTokens->proxy,
+        pxr::UsdGeomTokens->guide
+    ).GetRange();
+
+    pxr::GfVec3f bounds_min(range.GetMin()[0], range.GetMin()[1], range.GetMin()[2]);
+    pxr::GfVec3f bounds_max(range.GetMax()[0], range.GetMax()[1], range.GetMax()[2]);
+
+    auto extent = usd_mesh.GetExtentAttr();
+    pxr::VtArray<pxr::GfVec3f> float3arr = { bounds_min, bounds_max };
+    extent.Set(float3arr, timecode);
   }
+
   write_custom_data(mesh, usd_mesh);
 
   if (usd_export_context_.export_params.export_vertex_groups) {
