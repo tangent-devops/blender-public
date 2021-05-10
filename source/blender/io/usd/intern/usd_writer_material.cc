@@ -1892,12 +1892,9 @@ void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
 
     localize(localtree, localtree);
 
-    usd_define_or_over<pxr::UsdGeomScope>(
-        a_stage, usd_material.GetPath().AppendChild(cyclestokens::cycles), a_asOvers);
-
     store_cycles_nodes(a_stage,
                        localtree,
-                       usd_material.GetPath().AppendChild(cyclestokens::cycles),
+                       usd_material.GetPath(),
                        &output,
                        a_asOvers,
                        export_animated_textures,
@@ -1907,7 +1904,7 @@ void create_usd_cycles_material(pxr::UsdStageRefPtr a_stage,
     link_cycles_nodes(a_stage,
                       usd_material,
                       localtree,
-                      usd_material.GetPath().AppendChild(cyclestokens::cycles),
+                      usd_material.GetPath(),
                       a_asOvers);
 
     ntreeFreeLocalTree(localtree);
