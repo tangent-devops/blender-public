@@ -743,6 +743,7 @@ bool create_texture_shader_input(pxr::UsdShadeShader &shader,
 /* Creates a USD Preview Surface node based on given cycles shading node */
 pxr::UsdShadeShader create_usd_preview_shader_node(USDExporterContext const &usd_export_context_,
                                                    pxr::UsdShadeMaterial const &material,
+                                                   pxr::UsdShadeNodeGraph const &nodeGraph,
                                                    const char *const name,
                                                    const int type,
                                                    bNode *const node,
@@ -751,14 +752,11 @@ pxr::UsdShadeShader create_usd_preview_shader_node(USDExporterContext const &usd
                                                    const double anim_tex_end,
                                                    const double current_frame)
 {
-  pxr::SdfPath shader_path = material.GetPath()
-                                 .AppendChild(usdtokens::preview)
-                                 .AppendChild(pxr::TfToken(pxr::TfMakeValidIdentifier(name)));
+  pxr::SdfPath shader_path = nodeGraph.GetPath().AppendChild(
+    pxr::TfToken(pxr::TfMakeValidIdentifier(name)));
   pxr::UsdShadeShader shader = (usd_export_context_.export_params.export_as_overs) ?
-                                   pxr::UsdShadeShader(
-                                       usd_export_context_.stage->OverridePrim(shader_path)) :
-                                   pxr::UsdShadeShader::Define(usd_export_context_.stage,
-                                                               shader_path);
+    pxr::UsdShadeShader(usd_export_context_.stage->OverridePrim(shader_path)) :
+    pxr::UsdShadeShader::Define(usd_export_context_.stage, shader_path);
   switch (type) {
     case SH_NODE_TEX_IMAGE: {
       shader.CreateIdAttr(pxr::VtValue(usdtokens::uv_texture));
@@ -781,7 +779,9 @@ pxr::UsdShadeShader create_usd_preview_shader_node(USDExporterContext const &usd
     case SH_NODE_BSDF_DIFFUSE:
     case SH_NODE_BSDF_PRINCIPLED: {
       shader.CreateIdAttr(pxr::VtValue(usdtokens::preview_surface));
-      material.CreateSurfaceOutput().ConnectToSource(shader, usdtokens::surface);
+      nodeGraph.CreateOutput(usdtokens::surface, pxr::SdfValueTypeNames->Token).ConnectToSource(
+          shader, usdtokens::surface);
+      material.CreateSurfaceOutput().ConnectToSource(nodeGraph, usdtokens::surface);
       break;
     }
 
@@ -1451,9 +1451,14 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
                                          const double current_frame)
 {
   try {
-    usd_define_or_over<pxr::UsdGeomScope>(usd_export_context_.stage,
-                                          usd_material.GetPath().AppendChild(usdtokens::preview),
-                                          usd_export_context_.export_params.export_as_overs);
+    pxr::SdfPath nodeGraphPath = usd_material.GetPath().AppendChild(usdtokens::preview);
+
+    pxr::UsdShadeNodeGraph nodeGraph = (usd_export_context_.export_params.export_as_overs) ?
+                                 pxr::UsdShadeNodeGraph(
+                                   usd_export_context_.stage->OverridePrim(nodeGraphPath)) :
+                                 pxr::UsdShadeNodeGraph::Define(usd_export_context_.stage,
+                                                             nodeGraphPath);
+
 
     pxr::TfToken defaultUVSampler = (usd_export_context_.export_params.convert_uv_to_st) ?
                                     usdtokens::st :
@@ -1465,7 +1470,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
         // USD Preview surface has no concept of layering materials
 
         pxr::UsdShadeShader previewSurface = create_usd_preview_shader_node(
-          usd_export_context_, usd_material, node->name, node->type, node, export_animated_textures,
+          usd_export_context_, usd_material, nodeGraph, node->name, node->type, node, export_animated_textures,
           anim_tex_start, anim_tex_end, current_frame);
 
         // @TODO: Maybe use this call: bNodeSocket *in_sock = nodeFindSocket(node, SOCK_IN, "Base
@@ -1480,10 +1485,9 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
             found_node = traverse_channel(sock);
             if (found_node) {  // Create connection
               created_shader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, found_node->name, found_node->type, found_node,
+                usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
-              previewSurface.CreateInput(usdtokens::diffuse_color, pxr::SdfValueTypeNames->Float3)
-                .ConnectToSource(created_shader, usdtokens::rgb);
+
             } 
             else {  // Set hardcoded value
               bNodeSocketValueRGBA *socket_data = (bNodeSocketValueRGBA *) sock->default_value;
@@ -1498,7 +1502,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
             found_node = traverse_channel(sock);
             if (found_node) {  // Create connection
               created_shader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, found_node->name, found_node->type, found_node,
+                usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
               previewSurface.CreateInput(usdtokens::roughness, pxr::SdfValueTypeNames->Float)
                 .ConnectToSource(created_shader, usdtokens::r);
@@ -1515,7 +1519,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
             found_node = traverse_channel(sock);
             if (found_node) {  // Set hardcoded value
               created_shader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, found_node->name, found_node->type, found_node,
+                usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
               previewSurface.CreateInput(usdtokens::metallic, pxr::SdfValueTypeNames->Float)
                 .ConnectToSource(created_shader, usdtokens::r);
@@ -1532,7 +1536,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
             found_node = traverse_channel(sock);
             if (found_node) {  // Set hardcoded value
               created_shader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, found_node->name, found_node->type, found_node,
+                usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
               previewSurface.CreateInput(usdtokens::specular, pxr::SdfValueTypeNames->Float)
                 .ConnectToSource(created_shader, usdtokens::r);
@@ -1550,7 +1554,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
             found_node = traverse_channel(sock);
             if (found_node) {  // Set hardcoded value
               created_shader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, found_node->name, found_node->type, found_node,
+                usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
               previewSurface.CreateInput(usdtokens::opacity, pxr::SdfValueTypeNames->Float)
                 .ConnectToSource(created_shader, usdtokens::r);
@@ -1577,7 +1581,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
             found_node = traverse_channel(sock);
             if (found_node) {
               created_shader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, found_node->name, found_node->type, found_node,
+                usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
               previewSurface.CreateInput(usdtokens::normal, pxr::SdfValueTypeNames->Float)
                 .ConnectToSource(created_shader, usdtokens::rgb);
@@ -1608,7 +1612,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
                 continue;
 
               pxr::UsdShadeShader uvShader = create_usd_preview_shader_node(
-                usd_export_context_, usd_material, uvNode->name, uvNode->type, uvNode,
+                usd_export_context_, usd_material, nodeGraph, uvNode->name, uvNode->type, uvNode,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
               if (!uvShader.GetPrim().IsValid())
                 continue;
@@ -1648,6 +1652,7 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
               pxr::UsdShadeShader uvShader = create_usd_preview_shader_node(
                 usd_export_context_,
                 usd_material,
+                nodeGraph,
                 const_cast<char *>("uvmap"),
                 SH_NODE_TEX_COORD,
                 NULL,
