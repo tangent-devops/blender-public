@@ -1487,6 +1487,8 @@ void create_usd_preview_surface_material(USDExporterContext const &usd_export_co
               created_shader = create_usd_preview_shader_node(
                 usd_export_context_, usd_material, nodeGraph, found_node->name, found_node->type, found_node,
                 export_animated_textures, anim_tex_start, anim_tex_end, current_frame);
+       	      previewSurface.CreateInput(usdtokens::diffuse_color, pxr::SdfValueTypeNames->Float3)
+                .ConnectToSource(created_shader, usdtokens::rgb);
 
             } 
             else {  // Set hardcoded value
