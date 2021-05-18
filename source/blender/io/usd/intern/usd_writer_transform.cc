@@ -45,36 +45,6 @@ USDTransformWriter::USDTransformWriter(const USDExporterContext &ctx) : USDAbstr
 {
 }
 
-void mat4_to_loc_eul_size(float loc[3], float eul[3], float size[3], const float (*M)[4])
-{
-  float rot[3][3];
-
-  mat4_to_loc_rot_size(loc, rot, size, M);
-  mat3_to_eul(eul, rot);
-}
-
-void convert_axes(int src_forward, int src_up, int dst_forward, int dst_up, float mat[4][4])
-{
-  float loc[3], eul[3], size[3];
-  mat4_to_loc_eul_size(loc, eul, size, mat);
-  float mattest[4][4];
-  loc_eul_size_to_mat4(mattest, loc, eul, size);
-  float mrot[3][3];
-  mat3_from_axis_conversion(src_forward, src_up, dst_forward, dst_up, mrot);
-  transpose_m3(mrot);  // transpose = inversion for this matrix
-  mul_m3_v3(mrot, loc);
-  mul_m3_v3(mrot, eul);
-  for (int x = 0; x < 3; x++) {
-    for (int y = 0; y < 3; y++) {
-      if (mrot[x][y] < 0.0f) {
-        mrot[x][y] *= -1.0f;
-      }
-    }
-  }
-  mul_m3_v3(mrot, size);
-  loc_eul_size_to_mat4(mat, loc, eul, size);
-}
-
 void USDTransformWriter::do_write(HierarchyContext &context)
 {
   pxr::UsdGeomXform xform;
@@ -101,23 +71,23 @@ void USDTransformWriter::do_write(HierarchyContext &context)
       !usd_export_context_.export_params.apply_transforms) {
     float parent_relative_matrix[4][4];
     // The object matrix relative to the parent.
+    mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, context.matrix_world);
+
     if (usd_export_context_.export_params.convert_orientation) {
-      float parent_inv_world[4][4], matrix_world[4][4];
-      copy_m4_m4(matrix_world, context.matrix_world);
-      copy_m4_m4(parent_inv_world, context.parent_matrix_inv_world);
-      invert_m4(parent_inv_world);
-      convert_axes(USD_GLOBAL_FORWARD_Y,
-                   USD_GLOBAL_UP_Z,
-                   usd_export_context_.export_params.forward_axis,
-                   usd_export_context_.export_params.up_axis,
-                   parent_inv_world);
-      invert_m4(parent_inv_world);
-      convert_axes(USD_GLOBAL_FORWARD_Y,
-                   USD_GLOBAL_UP_Z,
-                   usd_export_context_.export_params.forward_axis,
-                   usd_export_context_.export_params.up_axis,
-                   matrix_world);
-      mul_m4_m4m4(parent_relative_matrix, parent_inv_world, matrix_world);
+      // In order to correct for the baked rotation, we have to sandwich the matrix
+      // with the rotation matrix and the inverse rotation matrix.
+      float mrot[3][3];
+      float mrot4[4][4];
+      // This returns the inverse rotation
+      mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
+                                USD_GLOBAL_UP_Z,
+                                usd_export_context_.export_params.forward_axis,
+                                usd_export_context_.export_params.up_axis,
+                                mrot);
+      copy_m4_m3(mrot4, mrot);
+      mul_m4_m4m4(parent_relative_matrix, parent_relative_matrix, mrot4);
+      transpose_m4(mrot4);  // Transpose is equivalent to inverse for this matrix
+      mul_m4_m4m4(parent_relative_matrix, mrot4, parent_relative_matrix);
     }
 
     // USD Xforms are by default set with an identity transform.
