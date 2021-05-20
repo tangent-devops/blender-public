@@ -572,6 +572,16 @@ void set_default(bNode *node,
   to_lower(inputName);
 
   pxr::TfToken sock_in = pxr::TfToken(pxr::TfMakeValidIdentifier(inputName));
+
+  // Only create and set an input value if there's not already a defined input value specified
+  // for the input socket.
+  if ( usd_shader.GetInput(sock_in) ) {
+    // There's a bug where Math nodes have duplicates input bNodeSockets later in their input lists
+    // which have default values that don't match the currently edited values. The earlier
+    // bNodeSockets with the same name have the proper values that should be exported.
+    return;
+  }
+
   switch (socketValue->type) {
     case SOCK_FLOAT: {
       bNodeSocketValueFloat *float_data = (bNodeSocketValueFloat *)socketValue->default_value;
@@ -1947,3 +1957,4 @@ void create_usd_viewport_material(USDExporterContext const &usd_export_context_,
 }
 
 }  // namespace USD
+
