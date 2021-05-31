@@ -176,6 +176,7 @@ static int wm_usd_export_exec(bContext *C, wmOperator *op)
   const bool generate_preview_surface = RNA_boolean_get(op->ptr, "generate_preview_surface");
   const bool convert_uv_to_st = RNA_boolean_get(op->ptr, "convert_uv_to_st");
   const bool convert_orientation = RNA_boolean_get(op->ptr, "convert_orientation");
+  const bool apply_transforms = RNA_boolean_get(op->ptr, "apply_transforms");
   const bool export_child_particles = RNA_boolean_get(op->ptr, "export_child_particles");
   const bool export_as_overs = RNA_boolean_get(op->ptr, "export_as_overs");
   const bool merge_transform_and_shape = RNA_boolean_get(op->ptr, "merge_transform_and_shape");
@@ -240,6 +241,7 @@ static int wm_usd_export_exec(bContext *C, wmOperator *op)
       convert_orientation,
       global_forward,
       global_up,
+      apply_transforms,
       export_child_particles,
       export_as_overs,
       merge_transform_and_shape,
@@ -367,6 +369,9 @@ static void wm_usd_export_draw(bContext *C, wmOperator *op)
     uiItemR(box, ptr, "export_global_forward_selection", 0, NULL, ICON_NONE);
     uiItemR(box, ptr, "export_global_up_selection", 0, NULL, ICON_NONE);
   }
+
+  if (RNA_boolean_get(ptr, "export_transforms"))
+    uiItemR(box, ptr, "apply_transforms", 0, NULL, ICON_NONE);
 
   if (RNA_boolean_get(ptr, "export_materials"))
     uiItemR(box, ptr, "generate_preview_surface", 0, NULL, ICON_NONE);
@@ -586,6 +591,13 @@ void WM_OT_usd_export(struct wmOperatorType *ot)
                USD_DEFAULT_UP,
                "Up Axis",
                "Global Up axis for export");
+
+  RNA_def_boolean(ot->srna,
+                  "apply_transforms",
+                  false,
+                  "Apply Transforms",
+                  "When checked, the USD exporter will apply any object transforms. "
+                  "This will convert mesh data to world co-ordinates instead of local.");
 
   RNA_def_boolean(ot->srna,
                   "export_child_particles",

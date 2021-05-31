@@ -27,6 +27,7 @@ extern "C" {
 
 #include "BLI_math_matrix.h"
 #include "BLI_math_rotation.h"
+#include "BLI_math_vector.h"
 
 #include "DNA_layer_types.h"
 }
@@ -66,28 +67,28 @@ void USDTransformWriter::do_write(HierarchyContext &context)
     }
   }
 
-  if (usd_export_context_.export_params.export_transforms) {
-    float parent_relative_matrix[4][4];  // The object matrix relative to the parent.
+  if (usd_export_context_.export_params.export_transforms &&
+      !usd_export_context_.export_params.apply_transforms) {
+    float parent_relative_matrix[4][4];
+    // The object matrix relative to the parent.
+    mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, context.matrix_world);
 
-    // TODO(bjs): This is inefficient checking for every transform. should be moved elsewhere
-    if (context.export_parent == nullptr &&
-        usd_export_context_.export_params.convert_orientation) {
-      float matrix_world[4][4];
-      copy_m4_m4(matrix_world, context.matrix_world);
+    if (usd_export_context_.export_params.convert_orientation) {
+      // In order to correct for the baked rotation, we have to sandwich the matrix
+      // with the rotation matrix and the inverse rotation matrix.
       float mrot[3][3];
-      float mat[4][4];
+      float mrot4[4][4];
+      // This returns the inverse rotation
       mat3_from_axis_conversion(USD_GLOBAL_FORWARD_Y,
                                 USD_GLOBAL_UP_Z,
                                 usd_export_context_.export_params.forward_axis,
                                 usd_export_context_.export_params.up_axis,
                                 mrot);
-      transpose_m3(mrot);
-      copy_m4_m3(mat, mrot);
-      mul_m4_m4m4(matrix_world, mat, context.matrix_world);
-      mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, matrix_world);
+      copy_m4_m3(mrot4, mrot);
+      mul_m4_m4m4(parent_relative_matrix, parent_relative_matrix, mrot4);
+      transpose_m4(mrot4);  // Transpose is equivalent to inverse for this matrix
+      mul_m4_m4m4(parent_relative_matrix, mrot4, parent_relative_matrix);
     }
-    else
-      mul_m4_m4m4(parent_relative_matrix, context.parent_matrix_inv_world, context.matrix_world);
 
     // USD Xforms are by default set with an identity transform.
     // This check ensures transforms of non-identity are authored
@@ -97,6 +98,7 @@ void USDTransformWriter::do_write(HierarchyContext &context)
       if (!xformOp_) {
         xformOp_ = xform.AddTransformOp();
       }
+
       xformOp_.Set(pxr::GfMatrix4d(parent_relative_matrix), get_export_time_code());
     }
   }

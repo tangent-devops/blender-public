@@ -85,6 +85,7 @@ struct USDExportParams {
   bool convert_orientation;
   enum USD_global_forward_axis forward_axis;
   enum USD_global_up_axis up_axis;
+  bool apply_transforms;
   bool export_child_particles;
   bool export_as_overs;
   bool merge_transform_and_shape;
