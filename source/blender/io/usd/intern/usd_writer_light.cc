@@ -151,6 +151,7 @@ void USDLightWriter::do_write(HierarchyContext &context)
 
   usd_light.CreateColorAttr().Set(pxr::GfVec3f(light->r, light->g, light->b), timecode);
   usd_light.CreateSpecularAttr().Set(light->spec_fac, timecode);
+  usd_light.CreateNormalizeAttr().Set(pxr::VtValue(true), timecode);
 
   if (usd_export_context_.export_params.export_custom_properties && light) {
     auto prim = usd_light.GetPrim();
