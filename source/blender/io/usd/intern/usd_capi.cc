@@ -209,7 +209,6 @@ static void export_startjob(void *customdata, short *stop, short *do_update, flo
         dome_light.CreateColorAttr().Set(
             pxr::VtValue(pxr::GfVec3f(world_color[0], world_color[1], world_color[2])));
       dome_light.CreateIntensityAttr().Set(pxr::VtValue(world_intensity));
-      dome_light.CreateNormalizeAttr().Set(pxr::VtValue(true));
     }
   }
 
